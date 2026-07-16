@@ -1,0 +1,63 @@
+# Environment variables (contains JWT secret, admin password)
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+
+# Database
+data/*.db
+data/*.db-journal
+
+# User uploaded files (keep directory via .gitkeep)
+data/avatars/*
+!data/avatars/.gitkeep
+data/courseware/*
+!data/courseware/.gitkeep
+data/resources/*
+!data/resources/.gitkeep
+data/submissions/*
+!data/submissions/.gitkeep
+data/pest-images/*
+!data/pest-images/.gitkeep
+data/_demo_content/
+
+# Node.js / Frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Local IDE config
+.trae/
+.claude/
+
+# Local/temp documents
+2026年全国大学生物联网设计竞赛设计文档模板.docx
+智慧大棚教学系统_设计文档.docx
+~$*.docx
+/package-lock.json
