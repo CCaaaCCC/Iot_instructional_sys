@@ -1,3 +1,6 @@
+from app.models.ai_quota_usage import AiQuotaUsage
+from app.models.chat_message import ChatMessage
+from app.models.chat_session import ChatSession
 from app.models.class_task import ClassTask
 from app.models.classroom import Classroom
 from app.models.component import Component
@@ -21,6 +24,9 @@ from app.models.teaching_resource import TeachingResource
 from app.models.user import User
 
 __all__ = [
+    "AiQuotaUsage",
+    "ChatMessage",
+    "ChatSession",
     "ClassTask",
     "Classroom",
     "Component",

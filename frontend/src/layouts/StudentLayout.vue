@@ -111,6 +111,7 @@
       </header>
       <RouterView />
     </main>
+    <AiAssistant />
   </div>
 </template>
 
@@ -121,6 +122,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useTheme } from '@/composables/useTheme'
 import { useWebSocket } from '@/composables/useWebSocket'
 import NotificationBell from '@/components/NotificationBell.vue'
+import AiAssistant from '@/components/AiAssistant.vue'
 
 const auth = useAuthStore()
 const route = useRoute()

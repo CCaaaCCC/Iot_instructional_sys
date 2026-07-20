@@ -10,6 +10,7 @@ from app.core.logging import setup_logging
 from app.core.mqtt_client import get_mqtt_client, start_mqtt, stop_mqtt
 from app.scripts.init_db import init_db
 from app.routers import (
+    ai,
     analytics,
     auth,
     classrooms,
@@ -77,6 +78,7 @@ def health_check() -> dict[str, str]:
 
 
 app.include_router(auth.router, prefix=settings.API_V1_STR)
+app.include_router(ai.router, prefix=settings.API_V1_STR)
 app.include_router(users.router, prefix=settings.API_V1_STR)
 app.include_router(device_nodes.router, prefix=settings.API_V1_STR)
 app.include_router(device_tokens.router, prefix=settings.API_V1_STR)

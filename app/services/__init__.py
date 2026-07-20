@@ -1,4 +1,5 @@
 from app.services import (
+    ai_service,
     classroom_service,
     courseware_service,
     crop_service,
@@ -24,6 +25,7 @@ from app.services import (
 )
 
 __all__ = [
+    "ai_service",
     "classroom_service",
     "courseware_service",
     "crop_service",

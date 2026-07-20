@@ -65,6 +65,7 @@
 | **设备鉴权令牌** | 为 ESP32/ESP32-CAM/ESP32-S3 签发设备 token，支持创建/重置/吊销/删除 |
 | **病虫害诊断** | 查看 ESP32-CAM 上传的植物病虫害诊断结果（mock AI 6 分类），实时 WebSocket 推送 |
 | **MCP 工具** | 查看小智 AI 可调用的 6 个 MCP 工具清单、调用日志，管理员可在线试用 |
+| **AI 教学助手** | 基于 DeepSeek API 的对话式助手（全局悬浮按钮+右侧抽屉），双模型智能切换（chat/reasoner）、SSE 流式输出、持久化会话历史、按角色注入系统提示词（学生学习助手 / 教师教学助手）、页面上下文感知、每日 50 次配额（独立计数，删除会话不重置；API 调用失败自动回退配额；失败时自动清理空会话）、消息显示模型标签（chat/深度思考） |
 
 ### 学生端
 
@@ -78,6 +79,7 @@
 | **病虫害诊断** | 查看本组 ESP32-CAM 上传的植物诊断结果（图片+分类+置信度+建议） |
 | **个人中心** | 上传头像、修改昵称、修改密码（需旧密码验证）、学习统计 |
 | **学习资源** | 查看教师发布的课件、视频和文档资料，支持下载 |
+| **AI 学习助手** | 同管理端 AI 助手，学生人设（「棚棚小助手」通俗语言）、独立会话隔离、配额独立计数 |
 
 ## 快速开始
 
@@ -581,7 +583,7 @@ API 基础路径：`/api/v1`，共 122 个端点。创建类操作返回 201，�
 
 ## 测试
 
-项目包含完整的测试套件：单元测试、集成测试、端到端测试，共 314 项。
+项目包含完整的测试套件：单元测试、集成测试、端到端测试，共 348 项。
 
 ```bash
 # 运行所有测试
@@ -648,7 +650,10 @@ IoT/
 │   │   ├── notification.py       # 通知模型（v4.1，P0-1 通知系统）
 │   │   ├── device_token.py       # 设备鉴权令牌（v4.1，P0-NEW-0，esp32/esp32cam/esp32s3）
 │   │   ├── pest_diagnosis.py     # 病虫害诊断（v4.1，P0-NEW-1，ESP32-CAM 上传）
-│   │   └── mcp_call_log.py       # MCP 调用日志（v4.1，P0-NEW-2，ESP32-S3 小智 AI）
+│   │   ├── mcp_call_log.py       # MCP 调用日志（v4.1，P0-NEW-2，ESP32-S3 小智 AI）
+│   │   ├── chat_session.py       # AI 对话会话（v4.2，DeepSeek）
+│   │   ├── chat_message.py       # AI 对话消息
+│   │   └── ai_quota_usage.py     # AI 每日配额计数（独立计数表）
 │   ├── schemas/                  # Pydantic 请求/响应模型
 │   │   ├── user.py, device_node.py, component.py, sensor_data.py, rule.py,
 │   │   │   classroom.py, group.py, class_task.py, task_submission.py, crop.py,
@@ -706,10 +711,13 @@ IoT/
 │       │   ├── StatCard.vue      # 统计数值卡片
 │       │   ├── SectionCard.vue   # 内容区块卡片
 │       │   ├── LineChart.vue     # ECharts 折线图（支持主题适配）
-│       │   └── NotificationBell.vue  # 通知铃铛（v4.1，WebSocket 实时通知）
+│       │   ├── NotificationBell.vue  # 通知铃铛（v4.1，WebSocket 实时通知）
+│       │   ├── AiAssistant.vue   # AI 助手（悬浮按钮 + 右侧抽屉，v4.2，DeepSeek）
+│       │   └── AiMessage.vue     # AI 消息气泡（marked + DOMPurify 渲染 Markdown）
 │       ├── composables/
 │       │   ├── useTheme.ts       # 主题切换 composable（localStorage 持久化）
-│       │   └── useWebSocket.ts   # WebSocket 单例连接管理（模块级共享，自动重连 + 30s 心跳）
+│       │   ├── useWebSocket.ts   # WebSocket 单例连接管理（模块级共享，自动重连 + 30s 心跳）
+│       │   └── useAI.ts          # AI 助手状态管理（会话/流式/配额，v4.2）
 │       ├── layouts/
 │       │   ├── AdminLayout.vue   # 管理端布局（三组导航：主菜单/教学管理/系统管理）
 │       │   └── StudentLayout.vue # 学生端布局
@@ -753,7 +761,7 @@ IoT/
 │
 ├── scripts/                      # 工具脚本
 │   └── smoke_test_teacher.py     # 教师端 E2E 冒烟测试（19 项）
-├── tests/                        # 测试套件（314 项，含设备鉴权+病虫害诊断+MCP）
+├── tests/                        # 测试套件（348 项，含设备鉴权+病虫害诊断+MCP+AI 助手）
 │   ├── conftest.py               # pytest 公共配置（含 student_token fixture）
 │   ├── test_unit.py              # 单元测试（Schema/枚举）
 │   ├── test_api.py               # API 集成测试

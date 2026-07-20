@@ -24,6 +24,7 @@ from app.routers import (
 )
 
 __all__ = [
+    "ai",
     "analytics",
     "auth",
     "classrooms",

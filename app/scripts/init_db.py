@@ -380,6 +380,17 @@ def init_db() -> None:
             # 清理失败不应阻断启动
             print(f"[init_db] MCP log cleanup skipped: {e}")
 
+        # 启动时清理超过 180 天的 AI 对话会话（级联删除消息）
+        try:
+            from app.services import ai_service
+
+            cleaned_ai = ai_service.cleanup_old_sessions(db)
+            if cleaned_ai > 0:
+                print(f"[init_db] Cleaned up {cleaned_ai} old AI chat sessions")
+        except Exception as e:
+            # 清理失败不应阻断启动
+            print(f"[init_db] AI session cleanup skipped: {e}")
+
 
 if __name__ == "__main__":
     init_db()

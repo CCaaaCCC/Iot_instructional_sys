@@ -232,6 +232,27 @@ Four modules built on top of the IoT layer:
 
 Student endpoints: `GET /student/me/analytics`, `GET /student/me/resources`, `GET /student/me/experiments/*`.
 
+### AI Assistant (DeepSeek)
+
+Built on DeepSeek API (OpenAI-compatible). Conversational assistant for students (learning help) and teachers (teaching prep). Suspended button + right-side drawer UI, persistent chat history, SSE streaming, dual-model switching.
+
+- **API prefix**: `/ai`. Roles: admin / teacher / student (operator forbidden).
+- **Data models**: `ChatSession` (user-isolated, cascade delete messages), `ChatMessage` (role/content/model_used), `AiQuotaUsage` (independent `(user_id, date)` UNIQUE counter — deleting sessions never resets quota).
+- **Config** (`app/core/config.py`): `DEEPSEEK_API_KEY` (empty = unconfigured, endpoints return 503-like error event), `DEEPSEEK_BASE_URL`, `DEEPSEEK_MODEL_CHAT` / `DEEPSEEK_MODEL_REASONER`, `AI_DAILY_QUOTA=50`, `AI_CONTEXT_WINDOW=10`, `AI_SESSION_TITLE_MAXLEN=30`, `AI_REQUEST_TIMEOUT=60`.
+- **Dual-model switch**: keyword rule matching in `ai_service.select_model()` — messages containing `_REASONER_KEYWORDS` (为什么/分析/解释原理/设计/制定/推理/对比/评估/...) use `deepseek-reasoner`, otherwise `deepseek-chat`.
+- **Streaming SSE events** (`POST /ai/chat` returns `StreamingResponse(media_type="text/event-stream")`):
+  - `data: {"type":"session","session_id":123}\n\n` (first event when session created)
+  - `data: {"type":"delta","content":"片段"}\n\n` (token-by-token output)
+  - `data: {"type":"done","message_id":456,"model":"..."}\n\n` (complete)
+  - `data: {"type":"error","message":"..."}\n\n` (failure)
+- **Quota isolation**: `ai_quota_usage` table committed independently of session lifecycle; users cannot bypass limits by deleting sessions.
+- **Quota rollback on failure**: When DeepSeek API call fails or returns empty response, `ai_service.decrement_quota()` rolls back the count so users don't lose quota on errors. Only successful responses (with content) consume quota.
+- **Empty session cleanup**: When `POST /ai/chat` creates a new session but `stream_chat` fails early (API unconfigured or quota exceeded), the empty session is deleted via `is_new_session` flag passed from router to service — no orphan "新对话" sessions left in DB.
+- **Session isolation**: `ChatSession.user_id == current_user.id` enforced in service layer — teachers cannot read students' conversations (privacy-first).
+- **System prompt**: role-aware persona (student: 「棚棚小助手」, 通俗语言, ≤300 字; teacher: 教学助手, 专业简洁, ≤500 字) + page context injection (`ChatContext.route_name` + `page_data`).
+- **Frontend**: floating button (bottom-right) + right drawer (`AiAssistant.vue`), `useAI` composable per layout (non-singleton), `AiMessage.vue` renders Markdown via `marked` + `DOMPurify`. Streaming via `fetch` + `ReadableStream` (EventSource cannot set Authorization header). Operator role hides the floating button.
+- **Cleanup**: `ai_service.cleanup_old_sessions(days=180)` called by `init_db()` at startup.
+
 ### Key Relationships
 
 - `User.group_id` → `Group.id` (students belong to one group, NULL for admin/teacher/operator)
@@ -249,6 +270,9 @@ Student endpoints: `GET /student/me/analytics`, `GET /student/me/resources`, `GE
 - `Experiment.class_id` → `Classroom.id`, `ExperimentGroup.group_id` → `Group.id`, `ExperimentObservation.student_id` → `User.id`
 - `DeviceToken.group_id` → `Group.id`, `DeviceToken.node_id` → `DeviceNode.id` (3 tokens per group: esp32/esp32cam/esp32s3)
 - `McpCallLog.group_id` → `Group.id`, `McpCallLog.device_token_id` → `DeviceToken.id` (30-day retention)
+- `ChatSession.user_id` → `User.id` (user-isolated, cascade delete-orphan on messages)
+- `ChatMessage.session_id` → `ChatSession.id`
+- `AiQuotaUsage(user_id, date)` UNIQUE constraint (independent of session deletion)
 
 ### Student Username Convention
 

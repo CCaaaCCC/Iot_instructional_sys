@@ -470,3 +470,33 @@ export interface McpCallLog {
 export interface McpCallLogListItem extends McpCallLog {
   group_name: string | null
 }
+
+// ---- AI 助手 ----
+export interface ChatSession {
+  id: number
+  title: string
+  role_hint: string
+  created_at: string
+  updated_at: string
+  last_message_preview: string | null
+}
+
+export interface ChatMessage {
+  id: number
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  model_used: string | null
+  created_at: string
+}
+
+export interface ChatContext {
+  route_name: string
+  page_data: Record<string, unknown>
+}
+
+export interface AiQuota {
+  used: number
+  limit: number
+  remaining: number
+  date: string
+}
