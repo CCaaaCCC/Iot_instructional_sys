@@ -50,7 +50,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)) -> N
                 node_id = group.node_id
             else:
                 node_id = 0  # 学生未绑定到节点，不会收到任何传感器数据
-        # 教师/操作员: node_id=None → 广播所有数据
+        # 教师/管理员: node_id=None → 广播所有数据
 
         await ws_manager.connect(websocket, user_id=user_id, role=role, node_id=node_id)
 

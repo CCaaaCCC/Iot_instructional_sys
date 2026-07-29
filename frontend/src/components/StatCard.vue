@@ -1,7 +1,7 @@
 <template>
   <section class="stat-card" :class="color">
-    <div class="stat-icon" :class="color">
-      <slot name="icon">{{ icon ? (iconMap[icon] ?? icon) : '' }}</slot>
+    <div v-if="$slots.icon" class="stat-icon" :class="color">
+      <slot name="icon" />
     </div>
     <div class="stat-label">{{ label }}</div>
     <div class="stat-value">{{ value }}</div>
@@ -17,11 +17,4 @@ defineProps<{
   color?: 'green' | 'gold' | 'blue' | 'red'
   icon?: string
 }>()
-
-const iconMap: Record<string, string> = {
-  devices: '🖥',
-  online: '🟢',
-  rules: '⚙',
-  tasks: '📋',
-}
 </script>

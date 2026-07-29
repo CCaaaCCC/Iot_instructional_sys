@@ -4,7 +4,6 @@ from enum import Enum
 class UserRole(str, Enum):
     admin = "admin"
     teacher = "teacher"
-    operator = "operator"
     student = "student"
 
 
@@ -31,10 +30,10 @@ class RuleOperator(str, Enum):
 class SensorMetric(str, Enum):
     air_temp = "air_temp"
     air_humidity = "air_humidity"
-    soil_temp = "soil_temp"
     soil_humidity = "soil_humidity"
     light_intensity = "light_intensity"
     soil_ph = "soil_ph"
+    co2 = "co2"
 
 
 class TaskStatus(str, Enum):
@@ -68,14 +67,14 @@ class DeviceType(str, Enum):
     esp32 = "esp32"
     esp32cam = "esp32cam"
     esp32s3 = "esp32s3"
+    esp32s3_monitor = "esp32s3_monitor"
 
 
 class DiagnosisResult(str, Enum):
-    """ESP32-CAM 视觉诊断结果（6 分类 mock AI）。"""
+    """ESP32-CAM 视觉诊断结果（5 分类，基于 ResNet50 真实模型推理）。"""
 
     tomato_healthy = "tomato_healthy"  # 番茄健康
     tomato_early_blight = "tomato_early_blight"  # 番茄早疫病
     tomato_late_blight = "tomato_late_blight"  # 番茄晚疫病
-    cucumber_healthy = "cucumber_healthy"  # 黄瓜健康
-    cucumber_powdery_mildew = "cucumber_powdery_mildew"  # 黄瓜白粉病
-    cucumber_anthracnose = "cucumber_anthracnose"  # 黄瓜炭疽病
+    strawberry_healthy = "strawberry_healthy"  # 草莓健康
+    strawberry_leaf_scorch = "strawberry_leaf_scorch"  # 草莓叶焦病

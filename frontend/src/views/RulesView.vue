@@ -17,10 +17,10 @@
           <select v-model="form.metric" class="select">
             <option value="air_temp">air_temp - 空气温度</option>
             <option value="air_humidity">air_humidity - 空气湿度</option>
-            <option value="soil_temp">soil_temp - 土壤温度</option>
             <option value="soil_humidity">soil_humidity - 土壤湿度</option>
             <option value="light_intensity">light_intensity - 光照强度</option>
             <option value="soil_ph">soil_ph - 土壤pH</option>
+            <option value="co2">co2 - CO₂浓度</option>
           </select>
         </label>
         <label>

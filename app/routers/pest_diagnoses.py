@@ -2,7 +2,7 @@
 
 权限：
 - POST /upload：设备 token 鉴权（get_device_context），仅 esp32cam 设备
-- GET 列表/详情：admin + teacher + operator（教师可读所有班级）
+- GET 列表/详情：admin + teacher（教师可读所有班级）
 - DELETE：admin
 - 学生通过 /student/me/pest-diagnoses 访问本组数据
 """
@@ -44,7 +44,7 @@ def upload_diagnosis(
     """ESP32-CAM 设备上传照片进行病虫害诊断。
 
     鉴权：设备 Bearer token（仅 esp32cam 类型设备可用）。
-    流程：校验图片 → 保存 → mock AI 分类 → WebSocket 推送 → 教师通知。
+    流程：校验图片 → 保存 → ResNet50 推理 → WebSocket 推送 → 教师通知。
     """
     if device.device_type != DeviceType.esp32cam.value:
         raise HTTPException(
@@ -71,14 +71,26 @@ def upload_diagnosis(
         f.write(image_data)
     image_url = f"/pest-images/{filename}"
 
-    diagnosis = pest_diagnosis_service.create_diagnosis(
-        db,
-        group_id=device.group_id,
-        node_id=device.node_id,
-        device_token_id=device.token.id,
-        image_url=image_url,
-        image_data=image_data,
-    )
+    try:
+        diagnosis = pest_diagnosis_service.create_diagnosis(
+            db,
+            group_id=device.group_id,
+            node_id=device.node_id,
+            device_token_id=device.token.id,
+            image_url=image_url,
+            image_data=image_data,
+        )
+    except (ValueError, RuntimeError) as e:
+        # 推理失败，清理已保存的图片文件，避免孤儿文件
+        if os.path.isfile(filepath):
+            try:
+                os.remove(filepath)
+            except OSError:
+                pass
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"病虫害诊断推理失败: {e}",
+        )
 
     return PestDiagnosisUploadResponse(
         id=diagnosis.id,
@@ -98,7 +110,7 @@ def list_diagnoses(
     limit: int = 100,
     db: Session = Depends(get_db),
     current_user=Depends(
-        require_roles(UserRole.admin, UserRole.operator, UserRole.teacher)
+        require_roles(UserRole.admin, UserRole.teacher)
     ),
 ) -> list[PestDiagnosisListOut]:
     """列出诊断记录（教师可读所有班级），支持按小组/结果过滤。"""
@@ -145,7 +157,7 @@ def get_diagnosis(
     diagnosis_id: int,
     db: Session = Depends(get_db),
     current_user=Depends(
-        require_roles(UserRole.admin, UserRole.operator, UserRole.teacher)
+        require_roles(UserRole.admin, UserRole.teacher)
     ),
 ) -> PestDiagnosisListOut:
     """获取诊断记录详情。"""

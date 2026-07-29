@@ -1,0 +1,293 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+#include <Adafruit_NeoPixel.h>
+#include <HardwareSerial.h>
+
+#include <DHT.h>
+
+#define UART1_RX_PIN 27  // 定义 UART1 的接收引脚（RX）
+#define UART1_TX_PIN 26  // 定义 UART1 的发送引脚（TX）
+
+
+// ==================== 参数配置区（按需修改） ====================
+
+// 光敏传感器设置
+const int SENSOR_PIN = 35;//AAA传感器引脚
+const int LIGHT_THRESHOLD = 2000;  // 基础明暗分界
+const int HYSTERESIS = 180;        // 防抖缓冲区间
+
+//土壤湿度传感器
+const int soilPin = 15;
+
+// 光敏ADC范围 0~4095
+const int ADC_MIN = 0;
+const int ADC_MAX = 4095;
+ static bool lightEnable = false;
+
+//气体检测  RX=16, TX=17
+HardwareSerial JW01Serial(2);  //
+
+// PH4502C PH值模拟输出引脚定义
+const int PH_PO_PIN = 34;
+// 校准参数（校准后修改这两个数值）
+float neutralVoltage = 2.50;  // pH7标准缓冲液对应的输出电压
+float slopeFactor = 0.17;     // 斜率系数
+
+
+uint16_t co2_ppm = 0;          // 存储CO2值
+
+// 定义 DHT11温湿度传感器 数据引脚连接的 Arduino 数字口
+#define DHTPIN 19      
+// 定义传感器类型为 DHT11
+#define DHTTYPE DHT11
+// 创建 DHT 传感器实例
+DHT dht(DHTPIN, DHTTYPE);
+
+//光照强度
+int avgBrightness;
+//温湿度
+float humidity;
+float temperature ;
+
+
+
+// ==================== 光线检测函数
+long sumBrightness = 0;
+int lightSampleCount = 0;
+unsigned long lightLastSampleTime = 0;
+
+int checkLight() {
+  const int adcMax = 4095;
+  const int sampleTimes = 10;
+  const int sampleInterval = 2; // 单位：毫秒(ms)
+  
+  // 1. 判断是否到了下一次采样的时间（非阻塞核心）
+  if (millis() - lightLastSampleTime >= sampleInterval) {
+    lightLastSampleTime = millis(); // 更新时间戳
+    
+    // 2. 执行单次采样
+    int raw = analogRead(SENSOR_PIN);
+    int brightness = adcMax - raw;
+    sumBrightness += brightness;
+    lightSampleCount++; // 采样次数 +1
+    
+    // 3. 判断是否已经采满 10 次
+    if (lightSampleCount >= sampleTimes) {
+      avgBrightness = sumBrightness / sampleTimes;
+      
+      // 重置状态，准备下一轮采样
+      sumBrightness = 0;
+      lightSampleCount = 0;
+      
+      return avgBrightness; // 采满时返回有效值
+    }
+  }
+  
+  return avgBrightness; // 未采满或未到时间，返回上一次的平均值
+}
+
+
+void ppm() {
+  // 使用 static 保持状态，跨 loop() 调用时不丢失
+  static uint8_t buf[6];
+  static int idx = 0;
+
+  // 【核心改动】去掉 while，每次进入函数最多只处理 1 个字节
+  if (JW01Serial.available() > 0) {
+    uint8_t c = JW01Serial.read(); // 读取当前这一个字节
+
+    if (idx == 0) {
+      // 寻找帧头
+      if (c == 0x2C) {
+        buf[0] = c;
+        idx = 1;
+      }
+      // 如果没找到帧头，idx 保持为 0，继续等下一个字节
+    } else {
+      // 接收后续数据
+      buf[idx] = c;
+      idx++;
+
+      // 收满 6 个字节
+      if (idx == 6) {
+        // 校验：前5字节之和的低8位 == 第6字节
+        uint8_t sum = buf[0] + buf[1] + buf[2] + buf[3] + buf[4];
+        if (sum == buf[5] && buf[1] == 0x01) { 
+          // 小端序解析 CO2 值
+          co2_ppm = buf[2] | (buf[3] << 8);
+        }
+        idx = 0; // 重置状态机，准备接收下一帧
+      }
+    }
+  }
+}
+
+// 封装函数：读取10次模拟值，返回平均电压
+#define PH_SAMPLE_TIMES 10
+#define PH_SAMPLE_INTERVAL 100 // 每次采样的间隔（毫秒）
+
+
+unsigned long phLastSampleTime = 0;//上一次执行时间戳
+int phSampleCount = 0;//目前执行的次数
+long phAdcSum = 0;//目前的总和
+bool flag = 0;
+float voltage_old = -1;
+
+float readPHAvgVoltage()
+{
+  int avgPhAdc = 0;
+  long sumAdc = 0;
+  float voltage = 0;
+   if (millis() - phLastSampleTime >= PH_SAMPLE_INTERVAL) {
+    phLastSampleTime = millis(); // 更新时间戳
+    
+    // 每次只读取一次 ADC 并累加
+    phAdcSum += analogRead(PH_PO_PIN);
+    phSampleCount++;
+   }
+    // 当读满 10 次时，计算平均值并重置计数器
+    if (phSampleCount >= PH_SAMPLE_TIMES) {
+      avgPhAdc = phAdcSum / PH_SAMPLE_TIMES;
+      // 重置，准备下一轮采样
+      phAdcSum = 0;
+      phSampleCount = 0;
+      voltage = avgPhAdc * 3.3 / 4095.0;
+      voltage_old = voltage;
+    }
+  return voltage_old;
+}
+
+// 根据电压换算pH值
+float voltageToPH(float volt)
+{
+  if(volt == -1)
+  {
+    return -1;
+  }
+  float pH = 7.0 + (neutralVoltage - volt) / slopeFactor;
+  return pH;
+}
+
+// 采样配置
+const int sampleCount = 10;
+int sampleBuf[sampleCount];
+int sampleIdx = 0;
+unsigned long sampleTimer = 0;
+const unsigned long sampleInterval = 200; // 单次采样间隔200ms
+
+float soilAvg;
+float soilAvg_;
+//土壤湿度
+void soil_moisture() {
+  unsigned long now = millis();
+
+  // 每200ms采集一次，填充10个采样值
+  if(now - sampleTimer >= sampleInterval)
+  {
+    sampleTimer = now;
+    sampleBuf[sampleIdx] = analogRead(soilPin);
+    sampleIdx++;
+    if(sampleIdx >= sampleCount)
+    {
+     sampleIdx = 0;
+
+      // 求和算平均
+      int sum = 0;
+      for(int i=0; i<sampleCount; i++) sum += sampleBuf[i];
+      soilAvg = sum / sampleCount;
+    }
+  }
+}
+
+void PM_led()
+{
+
+  Serial1.print("light:");
+  Serial1.print(avgBrightness);
+  Serial1.print('\n');
+}
+
+
+
+void PM_ppm()
+{
+  Serial1.print("ppm:");
+  Serial1.print(co2_ppm);
+  Serial1.print('\n');
+}
+
+
+void Tem_Hum()
+{
+  humidity = dht.readHumidity();
+  temperature = dht.readTemperature();
+
+  // 检查读取是否失败（如果返回 NaN 说明读取失败）
+  if (isnan(humidity) || isnan(temperature)) {
+    Serial.println("错误：无法读取 DHT11 数据，请检查接线或上拉电阻！");
+    return; // 跳过本次循环，不打印错误数据
+  }
+
+}
+void PM_Tem_Hum()
+{
+  // 读取失败则跳过发送，避免发送无效乱码
+  if (isnan(temperature) || isnan(humidity)) {
+    return;
+  }
+  Serial1.print("tem:");
+  Serial1.println(temperature);
+  Serial1.print("hum:");
+  Serial1.println(humidity);
+}
+
+
+void PM_PH() {
+  float volt = readPHAvgVoltage();
+  float pHValue = voltageToPH(volt);
+  if (pHValue < 0) return; // 无效值不发送
+  Serial1.print("ph:");
+  Serial1.println(pHValue);
+}
+
+void PM_soil() {
+  Serial1.print("soilHum:");
+  Serial1.println(soilAvg);
+}
+
+void dataup() {
+  checkLight();
+  readPHAvgVoltage();
+  ppm();
+  Tem_Hum();
+  soil_moisture(); // 补上土壤湿度采集，否则数据永远不更新
+}
+void Transmit() {
+  PM_led();
+  PM_ppm();
+  PM_PH();       // 大小写和函数定义保持一致
+  PM_Tem_Hum();
+  PM_soil();
+}
+void setup() {
+  Serial.begin(9600);
+  Serial1.begin(9600, SERIAL_8N1, UART1_RX_PIN, UART1_TX_PIN);
+  JW01Serial.begin(9600, SERIAL_8N1, 16, 17);
+  Serial.println("JW01 CO2 only - 启动");
+
+  analogReadResolution(12);
+
+  Wire.begin(23, 22);
+  analogReadResolution(12); // 开启12位高精度ADC
+   // 初始化 DHT11 传感器
+  dht.begin();
+}
+
+
+
+void loop() {
+  dataup();
+  Transmit();
+  delay(200);
+}

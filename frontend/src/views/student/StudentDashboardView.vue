@@ -61,10 +61,6 @@
             <div class="sensor-value">{{ latestSensor.air_humidity?.toFixed(1) ?? '--' }}%</div>
           </div>
           <div class="sensor-item">
-            <div class="sensor-label">土壤温度</div>
-            <div class="sensor-value">{{ latestSensor.soil_temp?.toFixed(1) ?? '--' }}°C</div>
-          </div>
-          <div class="sensor-item">
             <div class="sensor-label">土壤湿度</div>
             <div class="sensor-value">{{ latestSensor.soil_humidity?.toFixed(1) ?? '--' }}%</div>
           </div>
@@ -75,6 +71,10 @@
           <div class="sensor-item">
             <div class="sensor-label">土壤pH</div>
             <div class="sensor-value">{{ latestSensor.soil_ph?.toFixed(1) ?? '--' }}</div>
+          </div>
+          <div class="sensor-item">
+            <div class="sensor-label">CO₂浓度</div>
+            <div class="sensor-value">{{ latestSensor.co2?.toFixed(0) ?? '--' }} ppm</div>
           </div>
         </div>
         <div v-else class="empty-state">本组设备暂无传感器数据</div>

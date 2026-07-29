@@ -167,7 +167,7 @@ def control_component(
     component_id: int,
     payload: ComponentControlRequest,
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles(UserRole.admin, UserRole.teacher, UserRole.operator)),
+    current_user=Depends(require_roles(UserRole.admin, UserRole.teacher)),
 ) -> ComponentOut:
     comp = device_node_service.get_component(db, component_id)
     if not comp or comp.node_id != node_id:

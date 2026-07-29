@@ -126,10 +126,10 @@ const expGroupMap = reactive<Record<number, ExperimentGroup>>({})
 const metricLabels: Record<SensorMetric, string> = {
   air_temp: '空气温度',
   air_humidity: '空气湿度',
-  soil_temp: '土壤温度',
   soil_humidity: '土壤湿度',
   light_intensity: '光照强度',
   soil_ph: '土壤 pH',
+  co2: 'CO₂浓度',
 }
 function metricLabel(m: SensorMetric) { return metricLabels[m] ?? m }
 

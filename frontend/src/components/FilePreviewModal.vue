@@ -35,7 +35,7 @@
 
         <!-- Office 文件无预览 -->
         <div v-else class="file-preview-fallback">
-          <div class="file-preview-fallback-icon">📄</div>
+          <div class="file-preview-fallback-icon">文件</div>
           <p>该文件格式暂不支持在线预览</p>
           <a :href="file.file_url" class="btn primary" target="_blank" rel="noopener">下载文件</a>
         </div>

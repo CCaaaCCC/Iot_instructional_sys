@@ -4,7 +4,7 @@
       <template #header>
         <div>
           <h3 class="card-title">新增用户</h3>
-          <div class="card-subtitle">仅管理员可访问后端接口，可创建管理员/教师/操作员账号</div>
+          <div class="card-subtitle">仅管理员可访问后端接口，可创建管理员/教师账号</div>
         </div>
       </template>
       <form class="form-grid" @submit.prevent="handleCreate">
@@ -25,7 +25,6 @@
           <select v-model="form.role" class="select">
             <option value="admin">admin - 管理员</option>
             <option value="teacher">teacher - 教师</option>
-            <option value="operator">operator - 操作员</option>
           </select>
         </label>
         <label>
@@ -54,7 +53,6 @@
             <option value="">全部角色</option>
             <option value="admin">admin</option>
             <option value="teacher">teacher</option>
-            <option value="operator">operator</option>
             <option value="student">student</option>
           </select>
           <button class="btn secondary sm" @click="loadUsers">刷新</button>
@@ -83,7 +81,6 @@
         </tbody>
       </table>
       <div v-if="!filteredUsers.length" class="empty-state">
-        <div class="empty-state-icon">👤</div>
         暂无用户数据
       </div>
     </SectionCard>
@@ -121,7 +118,6 @@ function formatTime(value: string) {
 function roleClass(role: UserRole) {
   if (role === 'admin') return 'warning'
   if (role === 'teacher') return 'info'
-  if (role === 'operator') return ''
   if (role === 'student') return 'success'
   return ''
 }
@@ -130,7 +126,6 @@ function roleLabel(role: UserRole) {
   const map: Record<UserRole, string> = {
     admin: '管理员',
     teacher: '教师',
-    operator: '操作员',
     student: '学生',
   }
   return `${role} - ${map[role]}`

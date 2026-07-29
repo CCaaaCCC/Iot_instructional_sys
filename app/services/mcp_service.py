@@ -41,7 +41,7 @@ def list_tools() -> list[dict]:
     return [
         {
             "name": "get_latest_sensor_data",
-            "description": "获取本组的最新环境数据（气温、湿度、土壤温湿度、光照、pH）",
+            "description": "获取本组的最新环境数据（气温、湿度、土壤湿度、光照、pH、CO₂）",
             "parameters": {},
         },
         {
@@ -121,10 +121,10 @@ def _tool_get_latest_sensor_data(db: Session, device: DeviceContext) -> dict:
         "recorded_at": row.recorded_at.isoformat() if row.recorded_at else None,
         "air_temp": row.air_temp,
         "air_humidity": row.air_humidity,
-        "soil_temp": row.soil_temp,
         "soil_humidity": row.soil_humidity,
         "light_intensity": row.light_intensity,
         "soil_ph": row.soil_ph,
+        "co2": row.co2,
     }
 
 

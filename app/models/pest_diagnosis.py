@@ -10,7 +10,7 @@ from app.models.enums import DiagnosisResult
 class PestDiagnosis(Base):
     """ESP32-CAM 视觉节点的病虫害诊断记录。
 
-    设备通过 device_token 鉴权上传照片，后端 mock AI 分类后返回结果，
+    设备通过 device_token 鉴权上传照片，后端 ResNet50 模型推理后返回结果，
     并通过 WebSocket 实时推送给同组学生 + 教师。
     """
 
@@ -27,7 +27,7 @@ class PestDiagnosis(Base):
     )
     # 照片 URL（存储在 data/pest-images/ 下）
     image_url: Mapped[str] = mapped_column(String(255), nullable=False)
-    # 诊断结果（6 分类枚举）
+    # 诊断结果（5 分类枚举）
     diagnosis_result: Mapped[DiagnosisResult] = mapped_column(nullable=False, index=True)
     # 置信度 0-1
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)

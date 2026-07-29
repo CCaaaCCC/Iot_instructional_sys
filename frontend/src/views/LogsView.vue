@@ -30,7 +30,6 @@
         </tbody>
       </table>
       <div v-if="!operationLogs.length" class="empty-state">
-        <div class="empty-state-icon">📝</div>
         暂无操作日志
       </div>
     </SectionCard>
@@ -64,7 +63,6 @@
           </tbody>
         </table>
         <div v-if="!deviceLogs.length" class="empty-state">
-          <div class="empty-state-icon">🔌</div>
           暂无设备日志
         </div>
       </SectionCard>
@@ -97,7 +95,6 @@
           </tbody>
         </table>
         <div v-if="!ruleLogs.length" class="empty-state">
-          <div class="empty-state-icon">⚙</div>
           暂无规则日志
         </div>
       </SectionCard>

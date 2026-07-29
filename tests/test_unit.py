@@ -137,8 +137,8 @@ class TestSensorDataSchema:
     def test_create_valid(self):
         s = SensorDataCreate(
             node_id=1, air_temp=25.0, air_humidity=60.0,
-            soil_temp=20.0, soil_humidity=45.0,
-            light_intensity=350.0, soil_ph=6.5
+            soil_humidity=45.0,
+            light_intensity=350.0, soil_ph=6.5, co2=600.0
         )
         assert s.node_id == 1
         assert s.air_temp == 25.0
@@ -165,7 +165,7 @@ class TestSensorDataSchema:
 
     def test_create_out_of_range_light(self):
         with pytest.raises(ValidationError):
-            SensorDataCreate(node_id=1, light_intensity=3000.0)
+            SensorDataCreate(node_id=1, light_intensity=200000.0)
 
     def test_create_minimal(self):
         s = SensorDataCreate(node_id=1)
@@ -404,7 +404,6 @@ class TestEnums:
     def test_user_role_values(self):
         assert UserRole.admin.value == "admin"
         assert UserRole.teacher.value == "teacher"
-        assert UserRole.operator.value == "operator"
         assert UserRole.student.value == "student"
 
     def test_component_type_values(self):

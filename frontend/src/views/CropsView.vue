@@ -69,7 +69,6 @@
         </tbody>
       </table>
       <div v-if="!crops.length" class="empty-state">
-        <div class="empty-state-icon">🌱</div>
         暂无作物数据
       </div>
     </SectionCard>

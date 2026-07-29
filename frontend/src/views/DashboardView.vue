@@ -17,7 +17,6 @@
           <RouterLink v-if="canManageClassrooms" :to="{ name: 'classrooms' }" class="btn secondary sm">管理班级</RouterLink>
         </template>
         <div v-if="!classrooms.length" class="empty-state">
-          <div class="empty-state-icon">🏫</div>
           暂无班级数据，请先创建班级
         </div>
         <div v-else class="grid" style="gap: 10px">
@@ -45,7 +44,6 @@
           <RouterLink v-if="canManageTasks" :to="{ name: 'tasks' }" class="btn secondary sm">全部任务</RouterLink>
         </template>
         <div v-if="!tasks.length" class="empty-state">
-          <div class="empty-state-icon">📋</div>
           暂无任务
         </div>
         <table v-else class="table">
@@ -91,15 +89,14 @@
             <tbody>
               <tr><th>空气温度</th><td>{{ displayValue(overview.latest_sensor_data.air_temp) }} ℃</td></tr>
               <tr><th>空气湿度</th><td>{{ displayValue(overview.latest_sensor_data.air_humidity) }} %</td></tr>
-              <tr><th>土壤温度</th><td>{{ displayValue(overview.latest_sensor_data.soil_temp) }} ℃</td></tr>
               <tr><th>土壤湿度</th><td>{{ displayValue(overview.latest_sensor_data.soil_humidity) }} %</td></tr>
               <tr><th>光照强度</th><td>{{ displayValue(overview.latest_sensor_data.light_intensity) }} lux</td></tr>
               <tr><th>土壤 pH</th><td>{{ displayValue(overview.latest_sensor_data.soil_ph) }}</td></tr>
+              <tr><th>CO₂浓度</th><td>{{ displayValue(overview.latest_sensor_data.co2) }} ppm</td></tr>
             </tbody>
           </table>
         </div>
         <div v-else class="empty-state">
-          <div class="empty-state-icon">📊</div>
           暂无传感器数据
         </div>
       </SectionCard>
@@ -113,7 +110,6 @@
           <RouterLink v-if="canReview" :to="{ name: 'grading' }" class="btn primary sm">去批阅</RouterLink>
         </template>
         <div v-if="!pendingSubmissions.length" class="empty-state">
-          <div class="empty-state-icon">✅</div>
           暂无待批阅提交
         </div>
         <table v-else class="table">
@@ -181,6 +177,10 @@
           <h3 class="card-title">系统状态</h3>
           <div class="card-subtitle">接口健康检查</div>
         </div>
+        <div class="toolbar">
+          <span v-if="connected" class="badge success"><span class="badge-dot"></span> 实时</span>
+          <span v-else class="badge muted"><span class="badge-dot"></span> 离线</span>
+        </div>
       </template>
       <div class="toolbar">
         <span class="badge success" v-if="loading"><span class="badge-dot"></span> 加载中</span>
@@ -194,7 +194,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import SectionCard from '@/components/SectionCard.vue'
 import StatCard from '@/components/StatCard.vue'
 import LineChart from '@/components/LineChart.vue'
@@ -205,6 +205,7 @@ import { fetchGroups } from '@/api/groups'
 import { fetchTasks } from '@/api/tasks'
 import { fetchSubmissions } from '@/api/submissions'
 import { useAuthStore } from '@/stores/auth'
+import { useWebSocket } from '@/composables/useWebSocket'
 import type {
   Classroom,
   ClassTask,
@@ -218,6 +219,8 @@ import type {
 } from '@/types'
 
 const auth = useAuthStore()
+const { connected, latestSensorData, componentUpdates, deviceStatuses } = useWebSocket()
+
 const overview = ref<DashboardOverview | null>(null)
 const componentSummary = ref<ComponentSummaryItem[]>([])
 const chartData = ref<EChartsResponse | null>(null)
@@ -311,6 +314,65 @@ async function loadData() {
 }
 
 onMounted(loadData)
+
+// WebSocket 实时更新：最新环境数据 + 环境趋势曲线
+watch(latestSensorData, (data) => {
+  if (!data) return
+  // 更新"最新环境数据"卡片
+  if (overview.value) {
+    overview.value.latest_sensor_data = {
+      id: data.id,
+      node_id: data.node_id,
+      air_temp: data.air_temp,
+      air_humidity: data.air_humidity,
+      soil_humidity: data.soil_humidity,
+      light_intensity: data.light_intensity,
+      soil_ph: data.soil_ph,
+      co2: data.co2,
+      recorded_at: data.recorded_at,
+      created_at: data.recorded_at,
+    }
+  }
+  // 追加到"环境趋势"曲线
+  if (chartData.value) {
+    const timestamp = new Date(data.recorded_at).toLocaleString('zh-CN')
+    chartData.value.x.push(timestamp)
+    chartData.value.x.shift()
+    const metricMap: Record<string, number | null> = {
+      'air_temp': data.air_temp,
+      'air_humidity': data.air_humidity,
+      'soil_humidity': data.soil_humidity,
+      'light_intensity': data.light_intensity,
+      'soil_ph': data.soil_ph,
+      'co2': data.co2,
+    }
+    chartData.value.series.forEach((series) => {
+      const value = metricMap[series.name]
+      series.data.push(value ?? null)
+      series.data.shift()
+    })
+  }
+})
+
+// WebSocket 实时更新：在线节点数
+watch(deviceStatuses, (statuses) => {
+  const latest = statuses[statuses.length - 1]
+  if (!latest || !overview.value) return
+  if (latest.online) {
+    overview.value.online_nodes = (overview.value.online_nodes ?? 0) + 1
+  } else {
+    overview.value.online_nodes = Math.max(0, (overview.value.online_nodes ?? 0) - 1)
+  }
+})
+
+// WebSocket 实时更新：组件状态汇总（重新加载）
+watch(componentUpdates, async () => {
+  try {
+    componentSummary.value = await fetchComponentSummary()
+  } catch {
+    // 忽略：保持旧数据
+  }
+})
 </script>
 
 <style scoped>

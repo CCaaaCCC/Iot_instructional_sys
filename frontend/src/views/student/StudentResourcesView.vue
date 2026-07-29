@@ -13,7 +13,7 @@
           <div class="card-header">
             <div>
               <h3 class="card-title">
-                {{ group.subject === 'labor' ? '🧑‍🌾 劳动课' : '🔬 科学课' }}
+                {{ group.subject === 'labor' ? '劳动课' : '科学课' }}
               </h3>
               <div class="card-subtitle">共 {{ group.items.length }} 份学习资料</div>
             </div>
@@ -53,7 +53,6 @@
         </article>
       </template>
       <div v-else class="empty-state">
-        <div class="empty-state-icon">📚</div>
         暂无学习资源
       </div>
     </template>

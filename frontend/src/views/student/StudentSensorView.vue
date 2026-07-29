@@ -20,10 +20,6 @@
             <div class="sensor-value">{{ latest.air_humidity?.toFixed(1) ?? '--' }}%</div>
           </div>
           <div class="sensor-item">
-            <div class="sensor-label">土壤温度</div>
-            <div class="sensor-value">{{ latest.soil_temp?.toFixed(1) ?? '--' }}°C</div>
-          </div>
-          <div class="sensor-item">
             <div class="sensor-label">土壤湿度</div>
             <div class="sensor-value">{{ latest.soil_humidity?.toFixed(1) ?? '--' }}%</div>
           </div>
@@ -34,6 +30,10 @@
           <div class="sensor-item">
             <div class="sensor-label">土壤pH</div>
             <div class="sensor-value">{{ latest.soil_ph?.toFixed(1) ?? '--' }}</div>
+          </div>
+          <div class="sensor-item">
+            <div class="sensor-label">CO₂浓度</div>
+            <div class="sensor-value">{{ latest.co2?.toFixed(0) ?? '--' }} ppm</div>
           </div>
         </div>
         <div v-else class="empty-state">本组设备暂无传感器数据</div>
@@ -76,10 +76,10 @@
                 <th>采集时间</th>
                 <th>气温(°C)</th>
                 <th>空气湿度(%)</th>
-                <th>土壤温度(°C)</th>
                 <th>土壤湿度(%)</th>
                 <th>光照(lux)</th>
                 <th>pH</th>
+                <th>CO₂(ppm)</th>
               </tr>
             </thead>
             <tbody>
@@ -87,10 +87,10 @@
                 <td>{{ formatTime(row.recorded_at) }}</td>
                 <td>{{ row.air_temp?.toFixed(1) ?? '--' }}</td>
                 <td>{{ row.air_humidity?.toFixed(1) ?? '--' }}</td>
-                <td>{{ row.soil_temp?.toFixed(1) ?? '--' }}</td>
                 <td>{{ row.soil_humidity?.toFixed(1) ?? '--' }}</td>
                 <td>{{ row.light_intensity?.toFixed(0) ?? '--' }}</td>
                 <td>{{ row.soil_ph?.toFixed(1) ?? '--' }}</td>
+                <td>{{ row.co2?.toFixed(0) ?? '--' }}</td>
               </tr>
             </tbody>
           </table>
@@ -109,13 +109,22 @@ import type { EChartsResponse, SensorData, SensorMetric } from '@/types'
 
 const { connected, latestSensorData } = useWebSocket()
 
+const metricLabelMap: Record<string, string> = {
+  air_temp: '气温',
+  air_humidity: '空气湿度',
+  soil_humidity: '土壤湿度',
+  light_intensity: '光照',
+  soil_ph: 'pH',
+  co2: 'CO₂浓度',
+}
+
 const allMetrics: { value: SensorMetric; label: string }[] = [
   { value: 'air_temp', label: '气温' },
   { value: 'air_humidity', label: '空气湿度' },
-  { value: 'soil_temp', label: '土壤温度' },
   { value: 'soil_humidity', label: '土壤湿度' },
   { value: 'light_intensity', label: '光照' },
   { value: 'soil_ph', label: 'pH' },
+  { value: 'co2', label: 'CO₂浓度' },
 ]
 
 const loading = ref(true)
@@ -145,7 +154,13 @@ function toggleMetric(metric: SensorMetric) {
 async function loadECharts() {
   chartLoading.value = true
   try {
-    echartsData.value = await fetchMySensorECharts(selectedMetrics.value)
+    const data = await fetchMySensorECharts(selectedMetrics.value)
+    // series.name 从英文映射为中文
+    data.series = data.series.map((s) => ({
+      ...s,
+      name: metricLabelMap[s.name] || s.name,
+    }))
+    echartsData.value = data
   } catch (err) {
     console.error('Failed to load echarts data:', err)
   } finally {
@@ -179,6 +194,26 @@ watch(latestSensorData, (data) => {
   latest.value = data
   history.value.unshift(data)
   if (history.value.length > 100) history.value.pop()
+
+  if (echartsData.value) {
+    const timestamp = new Date(data.recorded_at).toLocaleString('zh-CN')
+    echartsData.value.x.push(timestamp)
+    echartsData.value.x.shift()
+
+    echartsData.value.series.forEach((series) => {
+      const metricMap: Record<string, number | null> = {
+        '气温': data.air_temp,
+        '空气湿度': data.air_humidity,
+        '土壤湿度': data.soil_humidity,
+        '光照': data.light_intensity,
+        'pH': data.soil_ph,
+        'CO₂浓度': data.co2,
+      }
+      const value = metricMap[series.name]
+      series.data.push(value ?? null)
+      series.data.shift()
+    })
+  }
 })
 
 onMounted(loadData)

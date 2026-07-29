@@ -50,7 +50,6 @@
       </template>
 
       <div v-if="!filteredGroups.length" class="empty-state">
-        <div class="empty-state-icon">👥</div>
         暂无小组，请先创建
       </div>
 

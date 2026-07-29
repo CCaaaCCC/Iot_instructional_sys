@@ -147,11 +147,21 @@ def control_component(
     from app.core.mqtt_client import publish_component_control
 
     if not publish_component_control(
-        component.node_id, component.id, action.value, message or ""
+        component.node_id, component.id, action.value, message or "",
+        component_type=component.type.value,
     ):
         logger.warning(
             "Component %s status updated to '%s' in DB, but MQTT control command was NOT delivered "
             "(broker disconnected) — device may not reflect the new state until reconnected",
             component.id, action.value,
         )
+    # WebSocket 实时广播组件状态变更（与 rule_service 保持一致）
+    from app.core.websocket_manager import ws_manager
+    ws_manager.broadcast_sync("component_status", {
+        "component_id": component.id,
+        "node_id": component.node_id,
+        "type": component.type.value,
+        "status": component.status.value,
+        "triggered_by_rule": None,  # 手动控制，非规则触发
+    }, node_id=component.node_id)
     return component

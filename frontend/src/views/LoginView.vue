@@ -48,7 +48,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
@@ -81,4 +81,21 @@ async function handleLogin() {
     loading.value = false
   }
 }
+
+onMounted(() => {
+  const auto = route.query.auto
+  if (auto === 'teacher') {
+    form.username = 'teacher'
+    form.password = 'Teacher123456'
+    setTimeout(handleLogin, 300)
+  } else if (auto === 'student') {
+    form.username = 'g1s1'
+    form.password = 'Student123456'
+    setTimeout(handleLogin, 300)
+  } else if (auto === '1' || auto === 'admin') {
+    form.username = 'admin'
+    form.password = 'Admin123456'
+    setTimeout(handleLogin, 300)
+  }
+})
 </script>

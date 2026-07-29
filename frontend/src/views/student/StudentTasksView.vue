@@ -58,7 +58,7 @@
                 <p class="re-submit-hint">重新提交将替换所有文件，请重新上传。</p>
                 <div class="file-list">
                   <div v-for="f in submitDialog.existingFiles" :key="f.id" class="file-item">
-                    <span class="file-icon">{{ fileTypeEmoji(f.file_type) }}</span>
+                    <span class="file-icon">{{ fileTypeLabel(f.file_type) }}</span>
                     <span class="file-name">{{ f.original_name }}</span>
                     <span class="file-size">{{ formatFileSize(f.file_size) }}</span>
                   </div>
@@ -76,7 +76,7 @@
                   @drop.prevent="handleDrop"
                   :class="{ 'upload-zone-active': dragOver }"
                 >
-                  <div class="upload-icon">📎</div>
+                  <div class="upload-icon">+</div>
                   <div class="upload-text">点击或拖拽文件到此处上传</div>
                   <div class="upload-hint">支持图片(jpg/png/webp/gif)、文档(pdf/ppt/doc/txt)、视频(mp4)，单个文件最大 20MB</div>
                 </div>
@@ -93,7 +93,7 @@
               <!-- Selected files list -->
               <div v-if="submitDialog.files.length > 0" class="file-list">
                 <div v-for="(f, idx) in submitDialog.files" :key="idx" class="file-item">
-                  <span class="file-icon">{{ fileTypeEmoji(f.type || '') }}</span>
+                  <span class="file-icon">{{ fileTypeLabel(f.type || '') }}</span>
                   <span class="file-name">{{ f.name }}</span>
                   <span class="file-size">{{ formatFileSize(f.size) }}</span>
                   <button class="file-remove-btn" @click="removeFile(idx)" title="移除">✕</button>
@@ -163,14 +163,14 @@ function taskTypeLabel(type: TaskType | null): string {
   return type ? taskTypeLabels[type] : ''
 }
 
-function fileTypeEmoji(mime: string): string {
-  if (mime.startsWith('image/')) return '🖼️'
-  if (mime.includes('pdf')) return '📕'
-  if (mime.includes('powerpoint') || mime.includes('presentation')) return '📊'
-  if (mime.includes('word') || mime.includes('document')) return '📝'
-  if (mime.includes('text')) return '📄'
-  if (mime.startsWith('video/')) return '🎬'
-  return '📎'
+function fileTypeLabel(mime: string): string {
+  if (mime.startsWith('image/')) return 'IMG'
+  if (mime.includes('pdf')) return 'PDF'
+  if (mime.includes('powerpoint') || mime.includes('presentation')) return 'PPT'
+  if (mime.includes('word') || mime.includes('document')) return 'DOC'
+  if (mime.includes('text')) return 'TXT'
+  if (mime.startsWith('video/')) return 'VID'
+  return 'FILE'
 }
 
 function formatFileSize(bytes: number): string {

@@ -169,17 +169,6 @@ class TestSessionCRUD:
 # ---------------------------------------------------------------------------
 
 class TestPermissionIsolation:
-    def test_operator_forbidden(self, client, operator_headers):
-        # operator 无 AI 助手权限
-        resp = client.post("/api/v1/ai/sessions", json={}, headers=operator_headers)
-        assert resp.status_code == 403
-
-        resp2 = client.get("/api/v1/ai/sessions", headers=operator_headers)
-        assert resp2.status_code == 403
-
-        resp3 = client.get("/api/v1/ai/quota", headers=operator_headers)
-        assert resp3.status_code == 403
-
     def test_student_can_access_own_session(self, client, student_headers):
         create = client.post("/api/v1/ai/sessions", json={}, headers=student_headers)
         assert create.status_code == 201

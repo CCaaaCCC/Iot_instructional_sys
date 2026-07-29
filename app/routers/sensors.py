@@ -15,7 +15,7 @@ router = APIRouter(prefix="/sensors", tags=["sensors"])
 def create_sensor_data(
     payload: SensorDataCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles(UserRole.admin, UserRole.teacher, UserRole.operator)),
+    current_user=Depends(require_roles(UserRole.admin, UserRole.teacher)),
 ) -> SensorDataOut:
     try:
         return sensor_service.create_sensor_data(db, payload)
@@ -31,7 +31,7 @@ def list_sensor_data(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles(UserRole.admin, UserRole.teacher, UserRole.operator)),
+    current_user=Depends(require_roles(UserRole.admin, UserRole.teacher)),
 ) -> list[SensorDataOut]:
     return sensor_service.list_sensor_data(
         db,
@@ -47,7 +47,7 @@ def list_sensor_data(
 def latest_sensor_data(
     node_id: int | None = None,
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles(UserRole.admin, UserRole.teacher, UserRole.operator)),
+    current_user=Depends(require_roles(UserRole.admin, UserRole.teacher)),
 ) -> SensorDataOut | None:
     return sensor_service.latest_sensor_data(db, node_id=node_id)
 
@@ -60,7 +60,7 @@ def echarts_data(
     metrics: list[SensorMetric] | None = Query(None),
     limit: int = 200,
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles(UserRole.admin, UserRole.teacher, UserRole.operator)),
+    current_user=Depends(require_roles(UserRole.admin, UserRole.teacher)),
 ) -> EChartsResponse:
     rows = sensor_service.list_sensor_data(
         db,

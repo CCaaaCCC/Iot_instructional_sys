@@ -9,7 +9,6 @@
       </div>
 
       <div v-if="diagnoses.length === 0" class="empty-state">
-        <div class="empty-state-icon">📷</div>
         暂无诊断记录，等待本组 ESP32-CAM 上传植物照片
       </div>
       <div v-else class="diagnosis-grid">
@@ -82,9 +81,8 @@ const resultLabels: Record<DiagnosisResult, string> = {
   tomato_healthy: '番茄健康',
   tomato_early_blight: '番茄早疫病',
   tomato_late_blight: '番茄晚疫病',
-  cucumber_healthy: '黄瓜健康',
-  cucumber_powdery_mildew: '黄瓜白粉病',
-  cucumber_anthracnose: '黄瓜炭疽病',
+  strawberry_healthy: '草莓健康',
+  strawberry_leaf_scorch: '草莓叶焦病',
 }
 
 function resultLabel(result: string): string {

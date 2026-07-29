@@ -33,68 +33,6 @@ from app.models.enums import (
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
 
-    # Migrate task_submissions.content from NOT NULL to NULL (SQLite)
-    with engine.connect() as conn:
-        result = conn.exec_driver_sql("PRAGMA table_info('task_submissions')")
-        columns = {row[1]: row for row in result}
-        content_col = columns.get("content")
-        if content_col is not None and content_col[3] == 1:  # notnull=1
-            conn.exec_driver_sql("BEGIN TRANSACTION")
-            conn.exec_driver_sql("""
-                CREATE TABLE task_submissions_new (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    task_id INTEGER NOT NULL REFERENCES class_tasks(id),
-                    student_id INTEGER NOT NULL REFERENCES users(id),
-                    content VARCHAR(500),
-                    image_url VARCHAR(255),
-                    submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    score INTEGER,
-                    feedback VARCHAR(255),
-                    reviewed_at DATETIME,
-                    reviewed_by INTEGER REFERENCES users(id)
-                )
-            """)
-            conn.exec_driver_sql(
-                "INSERT INTO task_submissions_new SELECT id, task_id, student_id, content, "
-                "image_url, submitted_at, score, feedback, reviewed_at, reviewed_by "
-                "FROM task_submissions"
-            )
-            conn.exec_driver_sql("DROP TABLE task_submissions")
-            conn.exec_driver_sql(
-                "ALTER TABLE task_submissions_new RENAME TO task_submissions"
-            )
-            conn.exec_driver_sql("COMMIT")
-
-    # Migrate experiments: add updated_at column if missing
-    with engine.connect() as conn:
-        result = conn.exec_driver_sql("PRAGMA table_info('experiments')")
-        col_names = {row[1] for row in result}
-        if "updated_at" not in col_names:
-            conn.exec_driver_sql(
-                "ALTER TABLE experiments ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP"
-            )
-            conn.commit()
-
-    # Migrate courseware: add preview_url column if missing
-    with engine.connect() as conn:
-        result = conn.exec_driver_sql("PRAGMA table_info('courseware')")
-        col_names = {row[1] for row in result}
-        if "preview_url" not in col_names:
-            conn.exec_driver_sql(
-                "ALTER TABLE courseware ADD COLUMN preview_url VARCHAR(255)"
-            )
-            conn.commit()
-
-    # Migrate teaching_resources: add preview_url column if missing
-    with engine.connect() as conn:
-        result = conn.exec_driver_sql("PRAGMA table_info('teaching_resources')")
-        col_names = {row[1] for row in result}
-        if "preview_url" not in col_names:
-            conn.exec_driver_sql(
-                "ALTER TABLE teaching_resources ADD COLUMN preview_url VARCHAR(255)"
-            )
-            conn.commit()
-
     with SessionLocal() as db:
         admin = db.execute(
             select(User).where(User.username == settings.INIT_ADMIN_USERNAME)
@@ -124,19 +62,6 @@ def init_db() -> None:
             db.add(teacher)
             db.commit()
             db.refresh(teacher)
-
-        operator = db.execute(select(User).where(User.username == "operator")).scalar_one_or_none()
-        if not operator:
-            operator = User(
-                username="operator",
-                hashed_password=get_password_hash("Operator123456"),
-                role=UserRole.operator,
-                is_active=True,
-                display_name="大棚管理员",
-            )
-            db.add(operator)
-            db.commit()
-            db.refresh(operator)
 
         if db.execute(select(DeviceNode)).first() is None:
             nodes = [
@@ -311,10 +236,10 @@ def init_db() -> None:
                         node_id=1,
                         air_temp=24.0 + offset,
                         air_humidity=55.0 - offset,
-                        soil_temp=20.0 + offset * 0.5,
                         soil_humidity=50.0 - offset * 2,
                         light_intensity=300.0 + offset * 15,
                         soil_ph=6.5,
+                        co2=600.0 + offset * 50,
                         recorded_at=now - timedelta(hours=4 - offset),
                     )
                 )
@@ -324,10 +249,10 @@ def init_db() -> None:
                         node_id=2,
                         air_temp=26.0 + offset,
                         air_humidity=58.0 - offset,
-                        soil_temp=21.0 + offset * 0.5,
                         soil_humidity=48.0 - offset * 2,
                         light_intensity=800.0 + offset * 10,
                         soil_ph=6.8,
+                        co2=550.0 + offset * 30,
                         recorded_at=now - timedelta(hours=2 - offset),
                     )
                 )

@@ -1,8 +1,8 @@
 """设备令牌管理路由：教师/管理员签发、列表、重置、吊销设备 token。
 
 权限：
-- 创建/重置/吊销：admin + operator + teacher（教师为本班设备签发）
-- 列表：admin + operator + teacher
+- 创建/重置/吊销：admin + teacher（教师为本班设备签发）
+- 列表：admin + teacher
 - 学生无权访问
 - /me：设备自身用 Bearer token 校验身份（非用户 JWT）
 """
@@ -33,7 +33,7 @@ def list_device_tokens(
     limit: int = 200,
     db: Session = Depends(get_db),
     current_user=Depends(
-        require_roles(UserRole.admin, UserRole.operator, UserRole.teacher)
+        require_roles(UserRole.admin, UserRole.teacher)
     ),
 ) -> list[DeviceTokenListOut]:
     """列出设备令牌，支持按小组/类型/状态过滤。"""
@@ -81,6 +81,7 @@ def list_device_tokens(
 
 @router.get("/me", response_model=DeviceTokenOut)
 def verify_device_self(
+    db: Session = Depends(get_db),
     device: DeviceContext = Depends(get_device_context),
 ) -> DeviceTokenOut:
     """设备自检端点：设备用 Bearer token 校验身份，返回自身令牌信息。
@@ -88,6 +89,8 @@ def verify_device_self(
     用途：设备启动时调用此接口确认 token 有效，并获取 group_id/node_id 上下文。
     鉴权：使用设备 token（非用户 JWT）。
     """
+    # verify_token 中已 flush last_used_at，此处 commit 持久化
+    db.commit()
     return device.token
 
 
@@ -100,7 +103,7 @@ def create_device_token(
     payload: DeviceTokenCreate,
     db: Session = Depends(get_db),
     current_user=Depends(
-        require_roles(UserRole.admin, UserRole.operator, UserRole.teacher)
+        require_roles(UserRole.admin, UserRole.teacher)
     ),
 ) -> DeviceTokenWithSecret:
     """为指定小组的某类设备签发新 token（明文 token 仅此一次返回）。"""
@@ -138,7 +141,7 @@ def reset_device_token(
     token_id: int,
     db: Session = Depends(get_db),
     current_user=Depends(
-        require_roles(UserRole.admin, UserRole.operator, UserRole.teacher)
+        require_roles(UserRole.admin, UserRole.teacher)
     ),
 ) -> DeviceTokenWithSecret:
     """重置 token 字符串（旧 token 立即失效，新 token 仅此一次返回）。"""
@@ -176,7 +179,7 @@ def revoke_device_token(
     token_id: int,
     db: Session = Depends(get_db),
     current_user=Depends(
-        require_roles(UserRole.admin, UserRole.operator, UserRole.teacher)
+        require_roles(UserRole.admin, UserRole.teacher)
     ),
 ) -> DeviceTokenOut:
     """吊销令牌（设为 inactive，设备调用将返回 401）。"""

@@ -1,13 +1,15 @@
-"""病虫害诊断服务：mock AI 分类 + CRUD + WebSocket 推送 + 教师通知。
+"""病虫害诊断服务：ResNet50 模型推理 + CRUD + WebSocket 推送 + 教师通知。
 
 设计要点：
-- mock AI 基于图片字节哈希确定性分类（同图同结果），6 分类
+- 使用训练好的 ResNet50 模型进行真实推理（5 分类）
+- 模型懒加载：首次推理时加载，之后复用
 - 诊断完成后通过 WebSocket 实时推送给同组（node_id 过滤）+ 教师
 - 教师收到通知（Notification 表）
 - 30 天保留策略：cleanup_old_diagnoses 删除超期记录及图片文件
 """
 
-import hashlib
+import io
+import logging
 import os
 from datetime import datetime, timedelta
 
@@ -19,7 +21,9 @@ from app.models import PestDiagnosis
 from app.models.enums import DiagnosisResult
 from app.services import notification_service
 
-# 诊断结果 → 中文标签 + 处理建议
+logger = logging.getLogger(__name__)
+
+# ── 诊断结果 → 中文标签 + 处理建议 ──────────────────────────────────
 _DIAGNOSIS_INFO: dict[DiagnosisResult, dict] = {
     DiagnosisResult.tomato_healthy: {
         "label": "番茄健康",
@@ -33,38 +37,141 @@ _DIAGNOSIS_INFO: dict[DiagnosisResult, dict] = {
         "label": "番茄晚疫病",
         "suggestion": "高湿环境下易发，叶片出现水浸状病斑，建议降低湿度并喷施霜脲氰防治。",
     },
-    DiagnosisResult.cucumber_healthy: {
-        "label": "黄瓜健康",
+    DiagnosisResult.strawberry_healthy: {
+        "label": "草莓健康",
         "suggestion": "植株生长状态良好，继续保持当前水肥管理。",
     },
-    DiagnosisResult.cucumber_powdery_mildew: {
-        "label": "黄瓜白粉病",
-        "suggestion": "叶面出现白色粉状物，建议通风降湿并喷施醚菌酯或硫磺制剂防治。",
-    },
-    DiagnosisResult.cucumber_anthracnose: {
-        "label": "黄瓜炭疽病",
-        "suggestion": "叶片出现圆形黄褐色病斑，建议清除病残体并喷施咪鲜胺防治。",
+    DiagnosisResult.strawberry_leaf_scorch: {
+        "label": "草莓叶焦病",
+        "suggestion": "叶缘出现紫褐色焦枯斑，建议清除病叶、加强通风，喷施苯醚甲环唑防治。",
     },
 }
 
-_ALL_RESULTS = list(DiagnosisResult)
 _RETENTION_DAYS = 30
 
+# ── 模型类名 → DiagnosisResult 映射 ────────────────────────────────
+_CLASS_NAME_MAP: dict[str, DiagnosisResult] = {
+    "Tomato___healthy": DiagnosisResult.tomato_healthy,
+    "Tomato___Early_blight": DiagnosisResult.tomato_early_blight,
+    "Tomato___Late_blight": DiagnosisResult.tomato_late_blight,
+    "Strawberry___healthy": DiagnosisResult.strawberry_healthy,
+    "Strawberry___Leaf_scorch": DiagnosisResult.strawberry_leaf_scorch,
+}
 
-def mock_ai_classify(image_data: bytes) -> tuple[DiagnosisResult, float]:
-    """基于图片字节哈希的确定性 mock 分类。
+# ── PyTorch 模型懒加载单例 ──────────────────────────────────────────
+_model = None
+_transform = None
+_classes: list[str] | None = None
+_device = None
 
-    同一张图片始终返回同一结果（便于测试复现），
-    不同图片在 6 个分类间分布。
+
+def _load_model():
+    """懒加载 PyTorch 模型（首次推理时触发）。"""
+    global _model, _transform, _classes, _device
+
+    if _model is not None:
+        return
+
+    try:
+        import torch
+        from torchvision import models, transforms
+        import torch.nn as nn
+    except ImportError:
+        logger.error(
+            "PyTorch 未安装，无法进行真实推理。"
+            "请安装: pip install torch torchvision"
+        )
+        raise RuntimeError(
+            "PyTorch 未安装，无法进行病虫害诊断。请安装: pip install torch torchvision"
+        ) from None
+
+    _device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logger.info("病虫害诊断模型加载设备: %s", _device)
+
+    # 推理预处理（与训练时 val_transform 一致）
+    IMAGENET_MEAN = [0.485, 0.456, 0.406]
+    IMAGENET_STD = [0.229, 0.224, 0.225]
+    _transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+    ])
+
+    # 加载 checkpoint
+    model_path = os.environ.get("PEST_MODEL_PATH", "models/pest_model.pth")
+    if not os.path.isfile(model_path):
+        logger.error("模型文件不存在: %s", model_path)
+        raise RuntimeError(f"病虫害诊断模型文件未找到: {model_path}")
+
+    checkpoint = torch.load(model_path, map_location=_device, weights_only=False)
+
+    if isinstance(checkpoint, dict) and "state_dict" in checkpoint:
+        _classes = checkpoint["classes"]
+        model_name = checkpoint.get("model_name", "resnet50")
+        state_dict = checkpoint["state_dict"]
+    else:
+        raise ValueError("模型 checkpoint 格式不支持，需要包含 state_dict + classes")
+
+    # 构建模型
+    if model_name == "resnet50":
+        model = models.resnet50(weights=None)
+    else:
+        model = models.resnet18(weights=None)
+    model.fc = nn.Linear(model.fc.in_features, len(_classes))
+    model.load_state_dict(state_dict)
+    model.to(_device)
+    model.eval()
+
+    _model = model
+    logger.info(
+        "病虫害诊断模型加载成功: %s, %d 类别, 设备=%s",
+        model_name, len(_classes), _device,
+    )
+
+
+def ai_classify(image_data: bytes) -> tuple[DiagnosisResult, float]:
+    """使用 ResNet50 模型对图片进行病虫害分类。
+
+    返回 (诊断结果, 置信度)。
+
+    异常：
+    - ValueError：图片预处理失败（损坏的图片、非图片数据）
+    - RuntimeError：模型推理失败（含 GPU OOM）
     """
-    digest = hashlib.md5(image_data).hexdigest()
-    # 取哈希前 8 字符转 int，模 6 选分类
-    idx = int(digest[:8], 16) % len(_ALL_RESULTS)
-    result = _ALL_RESULTS[idx]
-    # 置信度：0.72-0.98 之间，基于哈希确定性生成
-    conf_raw = int(digest[8:12], 16) % 2700  # 0-2699
-    confidence = round(0.72 + conf_raw / 10000, 4)  # 0.72 - 0.9899
-    return result, confidence
+    from PIL import Image
+
+    _load_model()
+
+    # bytes → PIL Image → tensor
+    try:
+        image = Image.open(io.BytesIO(image_data)).convert("RGB")
+        tensor = _transform(image).unsqueeze(0).to(_device)
+    except Exception as e:
+        raise ValueError(f"图片预处理失败: {e}") from e
+
+    # 推理
+    import torch
+    try:
+        with torch.no_grad():
+            output = _model(tensor)
+            probs = torch.softmax(output, dim=1)
+            confidence, pred_idx = probs[0].max(dim=0)
+    except torch.cuda.OutOfMemoryError:
+        torch.cuda.empty_cache()
+        raise RuntimeError("GPU 内存不足，请重试") from None
+    except Exception as e:
+        raise RuntimeError(f"模型推理失败: {e}") from e
+
+    pred_class = _classes[pred_idx.item()]
+    result = _CLASS_NAME_MAP.get(pred_class)
+    if result is None:
+        logger.warning("模型预测了未知类别: %s，回退到 tomato_healthy", pred_class)
+        result = DiagnosisResult.tomato_healthy
+
+    return result, round(confidence.item(), 4)
+
+
+# ── 业务逻辑 ────────────────────────────────────────────────────────
 
 
 def _build_suggestion(result: DiagnosisResult) -> str:
@@ -85,8 +192,8 @@ def create_diagnosis(
     image_url: str,
     image_data: bytes,
 ) -> PestDiagnosis:
-    """创建诊断记录：mock AI 分类 + 保存 + WebSocket 推送 + 教师通知。"""
-    result, confidence = mock_ai_classify(image_data)
+    """创建诊断记录：AI 推理 + 保存 + WebSocket 推送 + 教师通知。"""
+    result, confidence = ai_classify(image_data)
     suggestion = _build_suggestion(result)
     label = get_diagnosis_label(result)
 

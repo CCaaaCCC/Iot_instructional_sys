@@ -7,10 +7,10 @@ class SensorDataCreate(BaseModel):
     node_id: int = Field(gt=0)
     air_temp: float | None = Field(default=None, ge=-50, le=80)
     air_humidity: float | None = Field(default=None, ge=0, le=100)
-    soil_temp: float | None = Field(default=None, ge=-30, le=60)
     soil_humidity: float | None = Field(default=None, ge=0, le=100)
-    light_intensity: float | None = Field(default=None, ge=0, le=2000)
+    light_intensity: float | None = Field(default=None, ge=0, le=100000)
     soil_ph: float | None = Field(default=None, ge=0, le=14)
+    co2: float | None = Field(default=None, ge=0, le=5000)
     recorded_at: datetime | None = None
 
 

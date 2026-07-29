@@ -32,7 +32,7 @@ import StudentPestDiagnosisView from '../views/student/StudentPestDiagnosisView.
 
 const roleAccess: Record<string, string[]> = {
   dashboard: ['admin', 'teacher'],
-  devices: ['admin', 'teacher', 'operator'],
+  devices: ['admin', 'teacher'],
   sensors: ['admin', 'teacher'],
   rules: ['admin', 'teacher'],
   logs: ['admin', 'teacher'],
@@ -47,8 +47,8 @@ const roleAccess: Record<string, string[]> = {
   courseware: ['admin', 'teacher'],
   resources: ['admin', 'teacher'],
   experiments: ['admin', 'teacher'],
-  'pest-diagnoses': ['admin', 'teacher', 'operator'],
-  'mcp-tools': ['admin', 'teacher', 'operator'],
+  'pest-diagnoses': ['admin', 'teacher'],
+  'mcp-tools': ['admin', 'teacher'],
 }
 
 const router = createRouter({
@@ -119,7 +119,7 @@ router.beforeEach(async (to) => {
   if (to.name === 'login' && auth.isAuthenticated) {
     const role = auth.user?.role
     if (role === 'student') return { name: 'student-dashboard' }
-    return { name: role === 'operator' ? 'devices' : 'dashboard' }
+    return { name: 'dashboard' }
   }
   // 学生角色只能访问 /student/* 路由
   if (auth.user?.role === 'student') {
@@ -137,7 +137,7 @@ router.beforeEach(async (to) => {
     const allowed = roleAccess[routeName]
     const role = auth.user?.role ?? ''
     if (!allowed.includes(role)) {
-      return role === 'operator' ? { name: 'devices' } : { name: 'dashboard' }
+      return { name: 'dashboard' }
     }
   }
 })

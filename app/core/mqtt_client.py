@@ -145,28 +145,40 @@ def _mqtt_to_sensor_create(node_id: int, data: dict):
         node_id=node_id,
         air_temp=data.get("air_temp"),
         air_humidity=data.get("air_humidity"),
-        soil_temp=data.get("soil_temp"),
         soil_humidity=data.get("soil_humidity"),
         light_intensity=data.get("light_intensity"),
         soil_ph=data.get("soil_ph"),
+        co2=data.get("co2"),
         recorded_at=data.get("timestamp"),
     )
 
 
 def publish_component_control(
-    node_id: int, component_id: int, action: str, message: str = ""
+    node_id: int,
+    component_id: int,
+    action: str,
+    message: str = "",
+    component_type: str = "",
 ) -> bool:
-    """发布组件控制指令到 MQTT，返回是否成功送达"""
+    """发布组件控制指令到 MQTT，返回是否成功送达
+
+    Args:
+        component_type: 组件类型 (fan/pump/light)，方便设备端直接映射到执行器，
+                        无需反查数据库。空字符串表示未提供（向后兼容）。
+    """
     if _mqtt_client is None or not _mqtt_client.is_connected():
         logger.warning("MQTT not connected, cannot publish control command")
         return False
-    payload = json.dumps({
+    payload_dict = {
         "node_id": node_id,
         "component_id": component_id,
         "action": action,
         "message": message,
         "timestamp": datetime.now().isoformat(),
-    })
+    }
+    if component_type:
+        payload_dict["component_type"] = component_type
+    payload = json.dumps(payload_dict)
     info = _mqtt_client.publish(settings.MQTT_TOPIC_DEVICE_CONTROL, payload)
     logger.info(
         "MQTT control: node=%s component=%s action=%s (mid=%s)",

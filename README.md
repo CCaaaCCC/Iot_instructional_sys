@@ -12,16 +12,20 @@
 │   └─ 执行器（风扇/水泵/补光灯）                                │
 │                                                               │
 │  ESP32-CAM 视觉节点 ──HTTP──┐  （设备 token 鉴权）             │
-│   └─ 拍照上传 → 病虫害诊断（mock AI 6 分类）                  │
+│   └─ 拍照上传 → 病虫害诊断（ResNet50 5 分类）                 │
 │                                                               │
 │  ESP32-S3 小智 AI ──HTTP──┐  （设备 token 鉴权）               │
 │   └─ MCP 工具调用（6 个工具：传感器/控制/作物/任务）          │
+│                                                               │
+│  ESP32-S3 TFT 上位机 ──MQTT──┐  （MQTT 设备鉴权）             │
+│   ├─ UART 接收下位机传感器数据 → TFT 屏显示 + MQTT 上报云端   │
+│   └─ MQTT 接收执行器控制 → UART 下行到下位机（风扇/水泵/灯）  │
 │                         ▼                                     │
-└─────────────────── FastAPI 后端 :8000 ────────────────────────┘
+└─────────────────── FastAPI 后端 :8001 ────────────────────────┘
                                │
                     ┌──────────┼──────────┐
                     ▼          ▼          ▼
-               Mosquitto    SQLite    Vue 前端
+               Mosquitto    MySQL     Vue 前端
                MQTT Broker  数据库    教师/学生后台 :5173
 ```
 
@@ -35,10 +39,11 @@
 | 认证 | JWT (python-jose) | OAuth2 Bearer Token |
 | 密码加密 | bcrypt (passlib) | 单向哈希 |
 | MQTT | paho-mqtt + Mosquitto | IoT 设备通信 |
-| 数据库 | SQLite | 轻量文件数据库 |
+| 数据库 | MySQL 8.0 | 生产级关系数据库（utf8mb4 字符集） |
 | 前端 | Vue 3 + TypeScript | 组合式 API |
 | 构建 | Vite 5 | 前端开发与打包 |
 | 图表 | ECharts 5 | 传感器曲线 |
+| AI 推理 | PyTorch + torchvision | 病虫害诊断 ResNet50 模型（5 分类，CUDA/CPU 自动切换） |
 
 ## 功能模块
 
@@ -57,15 +62,15 @@
 | **实验管理** | 创建科学实验、设定变量指标/假设、分配对照/实验组、学生记录观察数据 |
 | **作物管理** | 维护作物档案、生长阶段、关联小组 |
 | **日志中心** | 三类日志：操作审计、设备操作（节点+组件）、规则触发 |
-| **用户权限** | 管理员维护管理员/教师/操作员账号 |
+| **用户权限** | 管理员维护管理员/教师账号 |
 | **学生画像** | 查看学生学习行为分析、提交统计、成绩趋势图表（ECharts），支持导出成长档案 PDF |
 | **课件库** | 教师上传课件（PPT/PDF/视频/文档），个人管理 + 公共课件分享市场 |
 | **教学资源** | 发布教学资源到班级/小组，学生端可查看下载 |
 | **班级驾驶舱** | 班级整体学情、小组表现排行、任务完成情况、评分分布 |
-| **设备鉴权令牌** | 为 ESP32/ESP32-CAM/ESP32-S3 签发设备 token，支持创建/重置/吊销/删除 |
-| **病虫害诊断** | 查看 ESP32-CAM 上传的植物病虫害诊断结果（mock AI 6 分类），实时 WebSocket 推送 |
+| **设备鉴权令牌** | 为 ESP32/ESP32-CAM/ESP32-S3/ESP32-S3 Monitor 签发设备 token，支持创建/重置/吊销/删除 |
+| **病虫害诊断** | 查看 ESP32-CAM 上传的植物病虫害诊断结果（ResNet50 真实推理 5 分类），实时 WebSocket 推送 |
 | **MCP 工具** | 查看小智 AI 可调用的 6 个 MCP 工具清单、调用日志，管理员可在线试用 |
-| **AI 教学助手** | 基于 DeepSeek API 的对话式助手（全局悬浮按钮+右侧抽屉），双模型智能切换（chat/reasoner）、SSE 流式输出、持久化会话历史、按角色注入系统提示词（学生学习助手 / 教师教学助手）、页面上下文感知、每日 50 次配额（独立计数，删除会话不重置；API 调用失败自动回退配额；失败时自动清理空会话）、消息显示模型标签（chat/深度思考） |
+| **AI 教学助手** | 基于 DeepSeek API 的对话式助手（全局悬浮按钮+右侧抽屉），双模型智能切换（chat/reasoner）、SSE 流式输出（XMLHttpRequest + onprogress，解决 ERR_ABORTED 和重复回答问题）、持久化会话历史、按角色注入系统提示词（学生学习助手 / 教师教学助手）、页面上下文感知、每日 50 次配额（独立计数，删除会话不重置；API 调用失败自动回退配额；失败时自动清理空会话）、消息显示模型标签（chat/深度思考） |
 
 ### 学生端
 
@@ -112,12 +117,12 @@ pip install -r requirements.txt
 python -m app.scripts.init_db
 
 # 启动 API 服务
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
 ```
 
 启动后访问：
-- API 文档（Swagger UI）：http://127.0.0.1:8000/docs
-- 健康检查：http://127.0.0.1:8000/health
+- API 文档（Swagger UI）：http://127.0.0.1:8001/docs
+- 健康检查：http://127.0.0.1:8001/health
 
 ### 3. 启动 MQTT Broker（可选，IoT 设备通信）
 
@@ -131,7 +136,19 @@ sudo apt install mosquitto
 sudo systemctl start mosquitto
 ```
 
-### 4. 前端启动
+### 4. 硬件模拟（可选，无需物理 ESP32 设备）
+
+```bash
+# 模拟 ESP32 节点（传感器上报 + 执行器控制 + 环境联动）
+python simulate_hardware.py --node-id 1 [--interval 5] [--duration 0]
+
+# 连接到小智 AI 官方后台（需配置 MCP_ENDPOINT 和 DEVICE_TOKEN）
+python mcp_bridge.py
+```
+
+> 模拟器特性：传感器数据上报（6 项指标）、执行器联动（风扇降温降湿、水泵增湿、补光灯增光）、日间变化（6:00-14:00 渐升）、MQTT 控制命令响应、设备状态心跳。
+
+### 5. 前端启动
 
 ```bash
 cd frontend
@@ -151,7 +168,6 @@ npm run dev
 |:--|:--|:--|:--|
 | 管理员 | admin | 见 .env 中 INIT_ADMIN_PASSWORD | 所有权限（含用户管理） |
 | 教师 | teacher | Teacher123456 | 设备/班级/小组/任务/批阅/作物/规则管理 |
-| 操作员 | operator | Operator123456 | 设备节点查看与组件控制 |
 | 学生 | g1s1 | Student123456 | 学生端全部功能 |
 
 > 学生账号由教师在"小组概览"页面批量创建，用户名规则为 `g{组号}s{序号}`（如 g1s2 = 1 组 2 号）。
@@ -166,7 +182,7 @@ npm run dev
 |------|--------|------|
 | `PROJECT_NAME` | Smart Greenhouse Admin API | 项目名称 |
 | `API_V1_STR` | /api/v1 | API 前缀 |
-| `DATABASE_URL` | sqlite:///./data/greenhouse.db | 数据库连接地址 |
+| `DATABASE_URL` | mysql+pymysql://root:CHANGE_ME@localhost:3306/greenhouse?charset=utf8mb4 | MySQL 连接地址（必须通过 .env 配置） |
 | `JWT_SECRET_KEY` | — | JWT 签名密钥（生产环境务必修改） |
 | `JWT_ALGORITHM` | HS256 | JWT 签名算法 |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | 1440 | Token 过期时间（分钟，默认 24 小时） |
@@ -189,18 +205,25 @@ npm run dev
 VITE_API_BASE_URL=/api/v1
 ```
 
-### 切换 MySQL 数据库
+### MySQL 数据库初始化
+
+项目默认使用 MySQL 8.0 数据库。首次使用需完成以下步骤：
 
 ```bash
-# 1. 修改 .env 中的 DATABASE_URL
-DATABASE_URL=mysql+pymysql://user:password@localhost:3306/greenhouse
+# 1. 启动 MySQL 服务后，创建数据库（utf8mb4 字符集支持中文和 emoji）
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS greenhouse CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 
-# 2. 安装 MySQL 驱动
+# 2. 在 .env 文件中配置连接（修改密码和数据库名）
+# DATABASE_URL=mysql+pymysql://root:你的密码@localhost:3306/greenhouse?charset=utf8mb4
+
+# 3. 安装 pymysql 驱动（已在 requirements.txt 中）
 pip install pymysql
 
-# 3. 重新初始化
+# 4. 初始化表结构 + 种子数据
 python -m app.scripts.init_db
 ```
+
+> 测试环境（pytest）仍使用 SQLite 内存数据库，无需 MySQL 即可运行 `pytest tests/`。
 
 ## API 文档
 
@@ -249,7 +272,7 @@ API 基础路径：`/api/v1`，共 122 个端点。创建类操作返回 201，�
 | GET | `/device-nodes/{node_id}/components` | 已登录 | 节点下组件列表 |
 | POST | `/device-nodes/{node_id}/components` | admin, teacher | 添加组件（201） |
 | PATCH | `/device-nodes/{node_id}/components/{component_id}` | admin, teacher | 更新组件 |
-| POST | `/device-nodes/{node_id}/components/{component_id}/control` | admin, teacher, operator | 控制组件状态 |
+| POST | `/device-nodes/{node_id}/components/{component_id}/control` | admin, teacher | 控制组件状态 |
 | GET | `/device-nodes/{node_id}/logs` | admin, teacher | 节点操作日志 |
 
 **组件控制请求体示例：**
@@ -268,10 +291,10 @@ API 基础路径：`/api/v1`，共 122 个端点。创建类操作返回 201，�
 
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
-| POST | `/sensors/data` | admin, teacher, operator | 上报传感器数据（201，触发规则引擎） |
-| GET | `/sensors/data` | admin, teacher, operator | 查询历史数据（支持 `node_id`、`limit`，默认 100 条） |
-| GET | `/sensors/data/latest` | admin, teacher, operator | 获取最新一条数据 |
-| GET | `/sensors/data/echarts` | admin, teacher, operator | 获取 ECharts 图表格式数据 |
+| POST | `/sensors/data` | admin, teacher | 上报传感器数据（201，触发规则引擎） |
+| GET | `/sensors/data` | admin, teacher | 查询历史数据（支持 `node_id`、`limit`，默认 100 条） |
+| GET | `/sensors/data/latest` | admin, teacher | 获取最新一条数据 |
+| GET | `/sensors/data/echarts` | admin, teacher | 获取 ECharts 图表格式数据 |
 
 **上报传感器数据示例：**
 
@@ -280,10 +303,10 @@ API 基础路径：`/api/v1`，共 122 个端点。创建类操作返回 201，�
   "node_id": 1,
   "air_temp": 26.5,
   "air_humidity": 58.0,
-  "soil_temp": 22.0,
   "soil_humidity": 45.0,
   "light_intensity": 350.0,
-  "soil_ph": 6.8
+  "soil_ph": 6.8,
+  "co2": 600.0
 }
 ```
 
@@ -312,7 +335,7 @@ API 基础路径：`/api/v1`，共 122 个端点。创建类操作返回 201，�
 }
 ```
 
-**规则指标枚举值：** `air_temp`、`air_humidity`、`soil_temp`、`soil_humidity`、`light_intensity`、`soil_ph`
+**规则指标枚举值：** `air_temp`、`air_humidity`、`soil_humidity`、`light_intensity`、`soil_ph`、`co2`
 **比较运算符：** `>`（大于）、`>=`（大于等于）、`<`（小于）、`<=`（小于等于）
 
 ### 班级管理 (Classrooms)
@@ -538,7 +561,7 @@ API 基础路径：`/api/v1`，共 122 个端点。创建类操作返回 201，�
 | `users` | id, username, hashed_password, role, is_active, display_name, avatar_url, group_id, created_at, updated_at | 用户账号（含学生） |
 | `device_nodes` | id, name, location, online, last_reported_at, created_at, updated_at | ESP32 设备节点 |
 | `components` | id, node_id, name, type, status, metric, created_at, updated_at | 节点下组件 |
-| `sensor_data` | id, node_id, air_temp, air_humidity, soil_temp, soil_humidity, light_intensity, soil_ph, recorded_at, created_at | 传感器数据（含 `node_id, recorded_at` 复合索引） |
+| `sensor_data` | id, node_id, air_temp, air_humidity, soil_humidity, light_intensity, soil_ph, co2, recorded_at, created_at | 传感器数据（含 `node_id, recorded_at` 复合索引） |
 | `rules` | id, name, metric, operator, threshold, action_component_type, action, enabled, description, created_at, updated_at | 自动控制规则 |
 | `rule_logs` | id, rule_id, sensor_data_id, node_id, component_id, message, triggered_at | 规则触发日志 |
 | `device_operation_logs` | id, node_id, component_id, operator_id, action, message, created_at | 设备操作日志 |
@@ -559,31 +582,31 @@ API 基础路径：`/api/v1`，共 122 个端点。创建类操作返回 201，�
 
 > 以下权限以后端路由 `require_roles` 实际校验为准。
 
-| 操作 | admin | teacher | operator | student |
-|------|:-----:|:-------:|:--------:|:------:|
-| 仪表盘查看 | ✅ | ✅ | ❌ | ❌ |
-| 设备节点列表/详情 | ✅ | ✅ | ✅ | ❌ |
-| 设备节点创建/编辑/删除 | ✅ | ✅ | ❌ | ❌ |
-| 组件控制（开/关/自动） | ✅ | ✅ | ✅ | ❌ |
-| 传感器数据上报/查看 | ✅ | ✅ | ✅ | ❌ |
-| 规则查看/创建/启停 | ✅ | ✅ | ❌ | ❌ |
-| 班级管理 | ✅ | ✅ | ❌ | ❌ |
-| 小组管理 | ✅ | ✅ | ❌ | ❌ |
-| 批量创建学生 | ✅ | ✅ | ❌ | ❌ |
-| 任务管理 | ✅ | ✅ | ❌ | ❌ |
-| 作业批阅 | ✅ | ✅ | ❌ | ❌ |
-| 作物管理 | ✅ | ✅ | ❌ | ❌ |
-| 操作日志查看 | ✅ | ❌ | ❌ | ❌ |
-| 设备日志/规则日志 | ✅ | ✅ | ❌ | ❌ |
-| 用户管理 | ✅ | ❌ | ❌ | ❌ |
-| 实验管理 | ✅ | ✅ | ❌ | ❌ |
-| 实验小组分配 | ✅ | ✅ | ❌ | ❌ |
-| 观察记录查看/创建 | ✅ | ✅ | ✅ | ✅ |
-| 学生端（/student/me/*） | — | — | — | ✅ |
+| 操作 | admin | teacher | student |
+|------|:-----:|:-------:|:------:|
+| 仪表盘查看 | ✅ | ✅ | ❌ |
+| 设备节点列表/详情 | ✅ | ✅ | ❌ |
+| 设备节点创建/编辑/删除 | ✅ | ✅ | ❌ |
+| 组件控制（开/关/自动） | ✅ | ✅ | ❌ |
+| 传感器数据上报/查看 | ✅ | ✅ | ❌ |
+| 规则查看/创建/启停 | ✅ | ✅ | ❌ |
+| 班级管理 | ✅ | ✅ | ❌ |
+| 小组管理 | ✅ | ✅ | ❌ |
+| 批量创建学生 | ✅ | ✅ | ❌ |
+| 任务管理 | ✅ | ✅ | ❌ |
+| 作业批阅 | ✅ | ✅ | ❌ |
+| 作物管理 | ✅ | ✅ | ❌ |
+| 操作日志查看 | ✅ | ❌ | ❌ |
+| 设备日志/规则日志 | ✅ | ✅ | ❌ |
+| 用户管理 | ✅ | ❌ | ❌ |
+| 实验管理 | ✅ | ✅ | ❌ |
+| 实验小组分配 | ✅ | ✅ | ❌ |
+| 观察记录查看/创建 | ✅ | ✅ | ✅ |
+| 学生端（/student/me/*） | — | — | ✅ |
 
 ## 测试
 
-项目包含完整的测试套件：单元测试、集成测试、端到端测试，共 348 项。
+项目包含完整的测试套件：单元测试、集成测试、端到端测试，共 365 项。
 
 ```bash
 # 运行所有测试
@@ -761,14 +784,13 @@ IoT/
 │
 ├── scripts/                      # 工具脚本
 │   └── smoke_test_teacher.py     # 教师端 E2E 冒烟测试（19 项）
-├── tests/                        # 测试套件（348 项，含设备鉴权+病虫害诊断+MCP+AI 助手）
+├── tests/                        # 测试套件（365 项，含设备鉴权+病虫害诊断+MCP+AI 助手）
 │   ├── conftest.py               # pytest 公共配置（含 student_token fixture）
 │   ├── test_unit.py              # 单元测试（Schema/枚举）
 │   ├── test_api.py               # API 集成测试
 │   └── test_e2e.py               # 端到端流程测试
 │
-├── data/                         # 数据目录
-│   ├── greenhouse.db             # SQLite 数据库文件
+├── data/                         # 数据目录（文件上传存储，数据库由 MySQL 管理）
 │   ├── avatars/                  # 用户头像（2MB，jpg/png/webp）
 │   ├── courseware/               # 课件文件（50MB，ppt/pdf/mp4/doc/txt）
 │   ├── resources/                # 教学资源文件（50MB）
@@ -777,7 +799,7 @@ IoT/
 ├── .env                          # 环境变量配置
 ├── .env.example                  # 环境变量示例
 ├── requirements.txt              # Python 依赖
-└── simulate_hardware.py          # 模拟硬件脚本（待适配新模型，见常见问题）
+└── simulate_hardware.py          # 硬件模拟器（ESP32 传感器/执行器模拟，MQTT 通信）
 ```
 
 ## 常见问题
@@ -788,7 +810,7 @@ IoT/
 
 ### Q: 前端页面空白或 API 请求 404
 
-确认后端已启动（`http://127.0.0.1:8000/health` 返回 `{"status":"ok"}`），前端 Vite 代理会自动转发 `/api` 请求到后端。
+确认后端已启动（`http://127.0.0.1:8001/health` 返回 `{"status":"ok"}`），前端 Vite 代理会自动转发 `/api` 请求到后端。
 
 ### Q: 登录失败
 
@@ -807,14 +829,17 @@ pip install bcrypt==4.0.1
 
 ### Q: `simulate_hardware.py` 运行报错
 
-`simulate_hardware.py` 尚未适配 v3.2 的 DeviceNode + Component 模型，仍引用旧的 `/api/v1/devices` 接口和 `device_id` 字段。建议：
-- 测试设备功能请使用前端"设备节点管理"页面手动操作。
-- 测试传感器数据请使用前端"传感器数据"页面手动上报。
-- 该脚本将在后续版本中更新适配。
+确保已启动后端（`uvicorn app.main:app --host 0.0.0.0 --port 8001`）和 MQTT broker（`mosquitto -v`）。模拟器会自动从数据库读取节点配置和设备 token。
+
+模拟器参数说明：
+- `--node-id`：节点 ID（默认 1），对应数据库中 DeviceNode 的 id
+- `--interval`：传感器上报间隔秒数（默认 5）
+- `--duration`：运行时长秒数，0 表示无限运行（默认 0）
+- `--mqtt-host` / `--mqtt-port`：MQTT broker 地址（默认 localhost:1883）
 
 ### Q: 如何切换数据库
 
-修改 `.env` 中的 `DATABASE_URL`，然后重新运行 `python -m app.scripts.init_db`。默认使用项目根目录下的 SQLite 文件。
+修改 `.env` 中的 `DATABASE_URL`，然后重新运行 `python -m app.scripts.init_db`。项目默认使用 MySQL 8.0，如需切换到其他数据库（如 PostgreSQL），安装对应驱动并修改连接串即可。
 
 ### Q: 如何添加新的传感器指标
 
@@ -829,12 +854,12 @@ pip install bcrypt==4.0.1
 
 1. 修改 `.env` 中的 `JWT_SECRET_KEY` 为强随机字符串
 2. 将 `CORS_ORIGINS` 设置为具体的前端域名
-3. 使用 MySQL/PostgreSQL 替代 SQLite
+3. 配置 MySQL 连接池参数（`pool_recycle` 避免 8 小时空闲断开）
 4. 使用 Nginx 反向代理，前端静态文件直接由 Nginx 提供服务
 5. 使用 Gunicorn + Uvicorn workers 运行后端
 
 ```bash
-gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
+gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8001
 ```
 
 ## 主题切换

@@ -131,7 +131,6 @@
         </tbody>
       </table>
       <div v-else class="empty-state">
-        <div class="empty-state-icon">📁</div>
         暂无教学资源
       </div>
     </SectionCard>

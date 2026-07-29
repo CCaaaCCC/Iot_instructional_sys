@@ -8,7 +8,7 @@
 4. 执行器状态影响环境数据（风扇降温降湿、水泵增湿、补光灯增光）
 
 使用前需启动：
-  - 后端: uvicorn app.main:app --port 8000
+  - 后端: uvicorn app.main:app --host 0.0.0.0 --port 8001
   - MQTT broker: mosquitto -v
 
 使用方法：
@@ -27,6 +27,7 @@ from datetime import datetime
 
 import paho.mqtt.client as mqtt
 from sqlalchemy import create_engine, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 # 同项目配置
@@ -49,19 +50,19 @@ logger = logging.getLogger("ESP32Sim")
 RANGES = {
     "air_temp":        (15.0, 38.0),
     "air_humidity":    (25.0, 95.0),
-    "soil_temp":       (12.0, 32.0),
     "soil_humidity":   (15.0, 85.0),
     "light_intensity": (0.0, 1000.0),
     "soil_ph":         (5.0, 8.0),
+    "co2":             (300.0, 2000.0),
 }
 
 DEFAULTS = {
     "air_temp":        25.0,
     "air_humidity":    60.0,
-    "soil_temp":       20.0,
     "soil_humidity":   50.0,
     "light_intensity": 300.0,
     "soil_ph":         6.5,
+    "co2":             600.0,
 }
 
 
@@ -126,20 +127,20 @@ class GreenhouseEnv:
         base_light = 800 * factor
         # 湿度：白天低(40%) → 夜间高(80%)
         base_air_hum = 80 - 40 * factor
-        # 土壤温度跟随气温但变化更缓
-        base_soil_temp = 16 + 12 * factor
         # 土壤湿度缓慢蒸发
         base_soil_hum = 55 - 5 * factor
+        # CO2：夜间呼吸升高 ~1000ppm，正午光合消耗 ~400ppm
+        base_co2 = 1000 - 600 * factor
 
         # ── 执行器影响（每周期叠加）──
-        # 风扇：降温降湿
+        # 风扇：降温降湿，通风换气降低 CO2
         if self.is_fan_on():
             self.air_temp = _clamp(self.air_temp - 0.3, "air_temp")
             self.air_humidity = _clamp(self.air_humidity - 0.5, "air_humidity")
-        # 水泵：增土壤湿度，微降土温
+            self.co2 = _clamp(self.co2 - 8, "co2")
+        # 水泵：增土壤湿度
         if self.is_pump_on():
             self.soil_humidity = _clamp(self.soil_humidity + 1.0, "soil_humidity")
-            self.soil_temp = _clamp(self.soil_temp - 0.1, "soil_temp")
         # 补光灯：增光照，微增气温
         if self.is_light_on():
             self.light_intensity = _clamp(self.light_intensity + 50, "light_intensity")
@@ -156,30 +157,30 @@ class GreenhouseEnv:
             self.light_intensity + (base_light - self.light_intensity) * 0.15,
             "light_intensity",
         )
-        self.soil_temp = _clamp(
-            self.soil_temp + (base_soil_temp - self.soil_temp) * 0.05, "soil_temp"
-        )
         self.soil_humidity = _clamp(
             self.soil_humidity + (base_soil_hum - self.soil_humidity) * 0.03,
             "soil_humidity",
+        )
+        self.co2 = _clamp(
+            self.co2 + (base_co2 - self.co2) * 0.08, "co2"
         )
 
         # ── 随机噪声 ──
         self.air_temp += random.gauss(0, 0.3)
         self.air_humidity += random.gauss(0, 0.8)
-        self.soil_temp += random.gauss(0, 0.2)
         self.soil_humidity += random.gauss(0, 0.5)
         self.light_intensity += random.gauss(0, 5)
+        self.co2 += random.gauss(0, 15)
         # pH 缓慢随机漂移
         self.soil_ph += random.gauss(0, 0.02)
 
         return {
             "air_temp":        round(_clamp(self.air_temp, "air_temp"), 1),
             "air_humidity":    round(_clamp(self.air_humidity, "air_humidity"), 1),
-            "soil_temp":       round(_clamp(self.soil_temp, "soil_temp"), 1),
             "soil_humidity":   round(_clamp(self.soil_humidity, "soil_humidity"), 1),
             "light_intensity": round(max(0, _clamp(self.light_intensity, "light_intensity")), 1),
             "soil_ph":         round(_clamp(self.soil_ph, "soil_ph"), 2),
+            "co2":             round(_clamp(self.co2, "co2"), 0),
         }
 
 
@@ -216,36 +217,35 @@ class ESP32Simulator:
 
     def load_components(self) -> bool:
         """从数据库加载节点的组件配置。"""
-        db_path = settings.DATABASE_URL.replace("sqlite:///", "")
-        if not os.path.exists(db_path):
-            logger.warning("数据库不存在 (%s)，使用默认组件配置", db_path)
+        try:
+            engine = create_engine(settings.DATABASE_URL)
+            with Session(engine) as session:
+                node = session.get(DeviceNode, self.node_id)
+                if not node:
+                    logger.error("数据库中不存在 node_id=%s", self.node_id)
+                    return False
+                self.node_name = node.name
+                logger.info("节点: %s (%s)", node.name, node.location or "")
+
+                stmt = select(Component).where(Component.node_id == self.node_id)
+                components = session.execute(stmt).scalars().all()
+
+                if not components:
+                    logger.warning("节点 %s 没有组件，使用默认配置", self.node_name)
+                    self._load_default_components()
+                    return True
+
+                for comp in components:
+                    if comp.type.value == "sensor":
+                        continue
+                    self.env.actuators[comp.id] = comp.status.value
+                    GreenhouseEnv._type_map[comp.id] = comp.type.value
+                    logger.info("  组件: %s (id=%s, type=%s, status=%s)",
+                                comp.name, comp.id, comp.type.value, comp.status.value)
+        except SQLAlchemyError as e:
+            logger.warning("数据库连接失败 (%s)，使用默认组件配置: %s", settings.DATABASE_URL, e)
             self._load_default_components()
             return True
-
-        engine = create_engine(settings.DATABASE_URL)
-        with Session(engine) as session:
-            node = session.get(DeviceNode, self.node_id)
-            if not node:
-                logger.error("数据库中不存在 node_id=%s", self.node_id)
-                return False
-            self.node_name = node.name
-            logger.info("节点: %s (%s)", node.name, node.location or "")
-
-            stmt = select(Component).where(Component.node_id == self.node_id)
-            components = session.execute(stmt).scalars().all()
-
-            if not components:
-                logger.warning("节点 %s 没有组件，使用默认配置", self.node_name)
-                self._load_default_components()
-                return True
-
-            for comp in components:
-                if comp.type.value == "sensor":
-                    continue
-                self.env.actuators[comp.id] = comp.status.value
-                GreenhouseEnv._type_map[comp.id] = comp.type.value
-                logger.info("  组件: %s (id=%s, type=%s, status=%s)",
-                            comp.name, comp.id, comp.type.value, comp.status.value)
 
         return True
 
@@ -316,11 +316,12 @@ class ESP32Simulator:
         light = "💡" if self.env.is_light_on() else "  "
 
         logger.info(
-            "📊 #%d  气温=%.1f°C  气湿=%.1f%%  土温=%.1f°C  土湿=%.1f%%  光照=%.1flux  pH=%.2f  %s%s%s",
+            "📊 #%d  气温=%.1f°C  气湿=%.1f%%  土湿=%.1f%%  光照=%.1flux  pH=%.2f  CO₂=%.0fppm  %s%s%s",
             self.report_count,
             readings["air_temp"], readings["air_humidity"],
-            readings["soil_temp"], readings["soil_humidity"],
+            readings["soil_humidity"],
             readings["light_intensity"], readings["soil_ph"],
+            readings["co2"],
             fan, pump, light,
         )
 

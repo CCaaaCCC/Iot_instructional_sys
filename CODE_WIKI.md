@@ -2,9 +2,9 @@
 
 > 面向小学劳动课 / 科学课的 IoT 智慧大棚教学管理平台。本 Wiki 从源码视角系统梳理项目整体架构、模块职责、关键类与函数、依赖关系及运行方式，作为开发与维护的代码索引文档。
 >
-> - **代码版本**：v4.1
+> - **代码版本**：v4.2
 > - **API 端点数**：122
-> - **测试**：314 项（单元 + API 集成 + E2E）
+> - **测试**：365 项（单元 + API 集成 + E2E）
 
 ---
 
@@ -46,11 +46,11 @@
 
 | 维度 | 能力 |
 |------|------|
-| 设备接入 | ESP32 经 MQTT 上报传感器数据；ESP32-CAM 经 HTTP（设备 token）上传图片做病虫害诊断；ESP32-S3 经 MCP 协议调用 6 个工具 |
+| 设备接入 | ESP32 经 MQTT 上报传感器数据；ESP32-CAM 经 HTTP（设备 token）上传图片做病虫害诊断；ESP32-S3 经 MCP 协议调用 6 个工具；ESP32-S3 Monitor（TFT 上位机）经 MQTT 上报传感器数据 + 接收执行器控制命令，通过 UART 与下位机通信 |
 | 自动控制 | 规则引擎（温度 > 30℃ 自动开风扇等）在数据入库时评估并下发 MQTT 控制指令 |
 | 教学闭环 | 班级 → 小组 → 学生 → 任务 → 作业提交（多附件）→ 教师批阅（0-100 分 + 评语）→ 学情分析 + PDF 成长档案 |
 | 实时推送 | WebSocket 推送传感器数据、组件状态、设备上下线、病虫害诊断、通知 5 类事件，学生只收本组数据 |
-| 角色权限 | admin / teacher / operator / student 四角色，路由级 `require_roles` + 前端 `roleAccess` 双重控制 |
+| 角色权限 | admin / teacher / student 三角色，路由级 `require_roles` + 前端 `roleAccess` 双重控制 |
 
 ### 技术栈
 
@@ -61,7 +61,7 @@
 | 数据校验 | Pydantic v2 / pydantic-settings | 2.8.2 / 2.4.0 |
 | 认证 | JWT（python-jose）+ bcrypt（passlib） | 3.3.0 / 1.7.4 |
 | MQTT | paho-mqtt + Mosquitto | 2.1.0 |
-| 数据库 | SQLite（可切换 MySQL/PostgreSQL） | — |
+| 数据库 | MySQL 8.0（pymysql 驱动，utf8mb4 字符集） | 8.0 |
 | PDF 导出 | reportlab | ≥4.0.0 |
 | 前端 | Vue 3（组合式 API）+ TypeScript | 3.5 |
 | 构建 | Vite | 5.4 |
@@ -81,12 +81,15 @@
 │   └─ 执行器（风扇 / 水泵 / 补光灯）                            │
 │  ESP32-CAM 视觉节点 ──HTTP──┐  (设备 token 鉴权, 病虫害诊断)    │
 │  ESP32-S3 小智 AI ──HTTP──┐    (设备 token 鉴权, MCP 6 工具)     │
-└────────────────── FastAPI 后端 :8000 ────────────────────────────┘
+│  ESP32-S3 TFT 上位机 ──MQTT──┐  (MQTT 设备鉴权, 传感器上报+执行器控制) │
+│   ├─ UART 接收下位机传感器数据 → TFT 显示 + MQTT 上报云端       │
+│   └─ MQTT 接收执行器控制命令 → UART 下行到下位机执行            │
+└────────────────── FastAPI 后端 :8001 ────────────────────────────┘
                           │
             ┌─────────────┼──────────────┐
             ▼             ▼              ▼
-       Mosquitto      SQLite        Vue 前端 :5173
-       MQTT Broker    greenhouse.db  (Vite 代理 /api → 8000)
+       Mosquitto      MySQL         Vue 前端 :5173
+       MQTT Broker    utf8mb4        (Vite 代理 /api → 8001)
                                       WebSocket /ws?token=jwt
 ```
 
@@ -147,27 +150,28 @@ IoT/
 ├── app/                          # 后端应用
 │   ├── core/                     # 核心模块（配置/安全/依赖/MQTT/WS/限流/日志/设备鉴权）
 │   ├── db/                       # 数据库层（base 基类 + session engine）
-│   ├── models/                   # ORM 数据模型（22 个实体）
+│   ├── models/                   # ORM 数据模型（24 个实体，含 AI 对话和配额）
 │   ├── schemas/                  # Pydantic 请求/响应模型（24 个）
 │   ├── routers/                  # API 路由（23 个路由文件，122 端点）
-│   ├── services/                 # 业务逻辑层（21 个 service）
+│   ├── services/                 # 业务逻辑层（22 个 service）
 │   ├── scripts/init_db.py        # 建表 + 种子数据 + 幂等迁移
 │   └── main.py                   # FastAPI 入口（lifespan + 路由挂载 + 静态文件）
 ├── frontend/                     # 前端应用（Vue 3 + TS + Vite）
 │   └── src/
-│       ├── api/                  # HTTP 请求封装（22 个模块）
-│       ├── components/           # 通用组件（StatCard/SectionCard/LineChart/NotificationBell）
-│       ├── composables/          # 组合式函数（useTheme/useWebSocket）
+│       ├── api/                  # HTTP 请求封装（23 个模块）
+│       ├── components/           # 通用组件（StatCard/SectionCard/LineChart/NotificationBell/AiAssistant/AiMessage）
+│       ├── composables/          # 组合式函数（useTheme/useWebSocket/useAI）
 │       ├── layouts/              # 布局（AdminLayout/StudentLayout）
 │       ├── router/index.ts       # 路由配置与导航守卫
 │       ├── stores/auth.ts        # Pinia 认证状态
 │       └── views/                # 页面（管理端 19 + 学生端 8）
 ├── scripts/smoke_test_teacher.py # 教师 E2E 冒烟测试
-├── tests/                        # 测试套件（314 项）
+├── tests/                        # 测试套件（365 项）
 ├── data/                         # 数据目录（DB + avatars/courseware/resources/submissions/pest-images）
 ├── requirements.txt              # Python 依赖
 ├── .env / .env.example           # 环境变量
-└── simulate_hardware.py          # 硬件模拟脚本（待适配新模型）
+├── simulate_hardware.py          # 硬件模拟脚本（ESP32 传感器/执行器模拟，MQTT 通信）
+└── mcp_bridge.py                 # MCP 桥接器（连接小智 AI 官方后台）
 ```
 
 ---
@@ -217,10 +221,11 @@ IoT/
 | 文件 | 职责 |
 |------|------|
 | [base.py](file:///d:/IoT/app/db/base.py) | `Base = declarative_base()`，所有模型的统一基类 |
-| [session.py](file:///d:/IoT/app/db/session.py) | 模块级 `engine` + `SessionLocal`；SQLite 启用外键约束（`PRAGMA foreign_keys=ON`）；`_ensure_sqlite_dir` 自动建数据目录 |
+| [session.py](file:///d:/IoT/app/db/session.py) | 模块级 `engine` + `SessionLocal`；MySQL 连接池（`pool_pre_ping=True` + `pool_recycle=3600`） |
 
-- `engine` 配置 `pool_pre_ping=True`（连接前探活）+ `future=True`（SQLAlchemy 2.0 风格）。
-- SQLite 使用 `check_same_thread=False` 以支持多线程（paho 回调线程访问 DB）。
+- `engine` 配置 `pool_pre_ping=True`（连接前探活）+ `pool_recycle=3600`（每小时回收连接，避免 MySQL `wait_timeout` 断开）+ `future=True`（SQLAlchemy 2.0 风格）。
+- MySQL InnoDB 引擎默认启用外键约束，无需额外 PRAGMA。
+- 测试环境（`tests/conftest.py`）仍使用 SQLite 内存数据库，与生产环境隔离。
 
 ### 4.4 数据模型层 (`app/models/`)
 
@@ -230,20 +235,20 @@ IoT/
 
 | 枚举 | 值 |
 |------|------|
-| `UserRole` | admin / teacher / operator / student |
+| `UserRole` | admin / teacher / student |
 | `ComponentType` | sensor / fan / pump / light |
 | `ComponentStatus` | on / off / auto |
 | `RuleOperator` | `>` / `>=` / `<` / `<=` |
-| `SensorMetric` | air_temp / air_humidity / soil_temp / soil_humidity / light_intensity / soil_ph |
+| `SensorMetric` | air_temp / air_humidity / soil_humidity / light_intensity / soil_ph / co2 |
 | `TaskStatus` | pending / in_progress / done |
 | `CourseSubject` | labor / science |
 | `TaskType` | observation / experiment / maintenance |
 | `ExperimentStatus` | ongoing / completed |
 | `ExperimentRole` | control / experimental |
-| `DeviceType` | esp32 / esp32cam / esp32s3 |
-| `DiagnosisResult` | 6 类（番茄健康/早疫/晚疫，黄瓜健康/白粉/炭疽） |
+| `DeviceType` | esp32 / esp32cam / esp32s3 / esp32s3_monitor |
+| `DiagnosisResult` | 5 类（番茄健康/早疫/晚疫，草莓健康/叶焦病） |
 
-#### 实体模型清单
+#### 实体模型清单（24 个）
 
 | 模型 | 表名 | 关键字段 | 说明 |
 |------|------|----------|------|
@@ -270,6 +275,9 @@ IoT/
 | `DeviceToken` | device_tokens | token(唯一索引)、group_id(FK)、device_type、device_name、node_id(FK)、is_active、last_used_at | 设备鉴权令牌（v4.1） |
 | `PestDiagnosis` | pest_diagnoses | group_id、node_id、device_token_id、image_url、diagnosis_result、confidence、suggestion | 病虫害诊断（v4.1） |
 | `McpCallLog` | mcp_call_logs | group_id、device_token_id、tool_name、arguments(JSON)、result(JSON)、duration_ms、success、error_message、expires_at | MCP 调用日志（v4.1，30 天过期） |
+| `ChatSession` | chat_sessions | user_id、title、created_at、updated_at | AI 对话会话（v4.2，用户隔离，级联删除消息） |
+| `ChatMessage` | chat_messages | session_id(FK)、role、content、model_used、created_at | AI 对话消息（v4.2） |
+| `AiQuotaUsage` | ai_quota_usage | user_id、date(UNIQUE)、count | AI 每日配额计数（v4.2，删除会话不重置） |
 
 #### 核心关系
 
@@ -292,10 +300,11 @@ Pydantic v2 模型，与 ORM 实体一一对应，承担请求体校验与响应
 - [user.py](file:///d:/IoT/app/schemas/user.py) — `_validate_password_complexity` 校验器：至少 8 位且含字母+数字。
 - [token.py](file:///d:/IoT/app/schemas/token.py) — OAuth2 登录响应 `{access_token, token_type, role, user_id}`。
 - [mcp.py](file:///d:/IoT/app/schemas/mcp.py) — MCP 工具调用请求/响应 + 日志模型。
+- [ai.py](file:///d:/IoT/app/schemas/ai.py) — AI 对话请求/响应 Schema（v4.2，ChatRequest / ChatSessionOut / ChatMessageOut / AiQuotaOut）。
 
 ### 4.6 业务逻辑层 (`app/services/`)
 
-21 个 service 封装所有业务规则，路由层只做编排。所有 service 在 [`__init__.py`](file:///d:/IoT/app/services/__init__.py) 导出。下表列出关键 service 及其核心函数。
+22 个 service 封装所有业务规则，路由层只做编排。所有 service 在 [`__init__.py`](file:///d:/IoT/app/services/__init__.py) 导出。下表列出关键 service 及其核心函数。
 
 #### 用户与认证
 
@@ -376,10 +385,13 @@ Pydantic v2 模型，与 ORM 实体一一对应，承担请求体校验与响应
 - `verify_token(db, token_str)` — 校验有效性并更新 `last_used_at`；无效/吊销返回 None
 - `reset_token` / `revoke_token` / `delete_token`
 
-**pest_diagnosis_service.py** — 病虫害诊断（mock AI）
-- `mock_ai_classify(image_data)` — 基于图片 MD5 哈希确定性分类（6 类），置信度 0.72-0.99
-- `create_diagnosis(db, group_id, node_id, ...)` — 分类 + 保存 + WebSocket 广播 `pest_diagnosis` + 通知 admin/teacher
+**pest_diagnosis_service.py** — 病虫害诊断（ResNet50 真实推理）
+- `_load_model()` — PyTorch 模型懒加载单例（首次推理时加载，之后复用；自动检测 CUDA）
+- `ai_classify(image_data)` — bytes → PIL Image → tensor → ResNet50 推理 → (DiagnosisResult, softmax 置信度)
+- `create_diagnosis(db, group_id, node_id, ...)` — 推理 + 保存 + WebSocket 广播 `pest_diagnosis` + 通知 admin/teacher
 - `cleanup_old_diagnoses(db)` — 清理 30 天以上记录与图片
+- 模型文件：`models/pest_model.pth`（可通过 `PEST_MODEL_PATH` 环境变量覆盖）
+- 测试环境：`tests/conftest.py` 的 `_mock_ai_classify` autouse fixture 用 monkeypatch 替换 `ai_classify`
 
 **export_service.py** — 学生成长档案 PDF（reportlab + STSong-Light 中文字体）
 - `export_student_growth_pdf(db, student_id) -> bytes` — 6 段：封面 / 学习概览 / 得分趋势折线图 / 提交频率条形图 / 近期活动 / 教师评语
@@ -395,6 +407,18 @@ Pydantic v2 模型，与 ORM 实体一一对应，承担请求体校验与响应
   - `_tool_list_pending_tasks` — 本组未完成任务
   - `_tool_list_group_rules` — 本组适用规则
 
+**ai_service.py** — AI 教学助手（v4.2，DeepSeek API）
+- `stream_chat(db, user, session, message, context, is_new_session)` — **核心流式对话**：校验 API Key 和配额 → 构建系统提示词 →
+  SSE 逐 token 流式生成 → 完成时保存消息 + 更新会话标题 → 失败时装饰性配额回退 + 清理空会话
+- `select_model(message)` — 关键词规则匹配双模型切换（chat / reasoner）
+- `get_or_create_session(db, user, session_id)` — 恢复或创建会话
+- `get_sessions(db, user, skip, limit)` — 用户会话列表（按 updated_at 倒序）
+- `get_messages(db, session_id, user)` — 会话消息列表（校验所有权）
+- `delete_session(db, session_id, user)` — 删除会话（级联删除消息）
+- `get_quota(db, user)` — 获取今日配额使用情况
+- `decrement_quota(db, user)` — 回退配额（API 调用失败时）
+- `cleanup_old_sessions(days=180)` — 清理过期会话
+
 ### 4.7 路由层 (`app/routers/`)
 
 23 个路由文件，122 个端点。统一前缀 `/api/v1`（`ws.py` 除外）。命名约定：每个文件定义 `router = APIRouter(prefix="/xxx", tags=["xxx"])`，通过 `Depends(get_db)` 注入 DB，`Depends(require_roles(...))` 或 `Depends(get_device_context)` 控制权限。
@@ -404,8 +428,8 @@ Pydantic v2 模型，与 ORM 实体一一对应，承担请求体校验与响应
 | [auth.py](file:///d:/IoT/app/routers/auth.py) | /auth | 公开/已登录 | `POST /login`（OAuth2 表单）、`GET /me` |
 | [users.py](file:///d:/IoT/app/routers/users.py) | /users | admin | 用户 CRUD |
 | [device_nodes.py](file:///d:/IoT/app/routers/device_nodes.py) | /device-nodes | 已登录/admin+teacher | 节点 CRUD + 组件 CRUD + `/control` |
-| [device_tokens.py](file:///d:/IoT/app/routers/device_tokens.py) | /device-tokens | admin+teacher+operator | 设备令牌签发/重置/吊销/删除 |
-| [sensors.py](file:///d:/IoT/app/routers/sensors.py) | /sensors | admin+teacher+operator | 数据上报（触发规则引擎）/查询/echarts |
+| [device_tokens.py](file:///d:/IoT/app/routers/device_tokens.py) | /device-tokens | admin+teacher | 设备令牌签发/重置/吊销/删除 |
+| [sensors.py](file:///d:/IoT/app/routers/sensors.py) | /sensors | admin+teacher | 数据上报（触发规则引擎）/查询/echarts |
 | [rules.py](file:///d:/IoT/app/routers/rules.py) | /rules | admin+teacher | 规则 CRUD + toggle + logs |
 | [classrooms.py](file:///d:/IoT/app/routers/classrooms.py) | /classrooms | admin+teacher | 班级 CRUD |
 | [groups.py](file:///d:/IoT/app/routers/groups.py) | /groups | admin+teacher | 小组 CRUD + bind/unbind + 批量建学生 |
@@ -422,7 +446,8 @@ Pydantic v2 模型，与 ORM 实体一一对应，承担请求体校验与响应
 | [notifications.py](file:///d:/IoT/app/routers/notifications.py) | /notifications | 已登录 | 通知列表/未读数/已读 |
 | [exports.py](file:///d:/IoT/app/routers/exports.py) | /exports | admin+teacher | `GET /students/{id}/growth-pdf`（RFC 5987 中文文件名） |
 | [pest_diagnoses.py](file:///d:/IoT/app/routers/pest_diagnoses.py) | /pest-diagnoses | 设备 token/admin+teacher | 设备上传诊断 + 管理端查询 |
-| [mcp.py](file:///d:/IoT/app/routers/mcp.py) | /mcp | 设备 token/admin+teacher+operator | `GET /tools` + `POST /tools/call` + `GET /logs` |
+| [mcp.py](file:///d:/IoT/app/routers/mcp.py) | /mcp | 设备 token/admin+teacher | `GET /tools` + `POST /tools/call` + `GET /logs` |
+| [ai.py](file:///d:/IoT/app/routers/ai.py) | /ai | admin+teacher+student | `POST /sessions`、`GET /sessions`、`DELETE /sessions/{id}`、`GET /messages/{session_id}`、`POST /chat`（SSE 流式）、`GET /quota` |
 | [ws.py](file:///d:/IoT/app/routers/ws.py) | /ws | JWT（URL query） | WebSocket 实时推送 |
 
 **约定：** 创建类返回 201，删除类返回 204。
@@ -444,7 +469,7 @@ Pydantic v2 模型，与 ORM 实体一一对应，承担请求体校验与响应
 
 - [main.ts](file:///d:/IoT/frontend/src/main.ts) — 创建 Vue 应用，挂载 Pinia + Router，应用全局样式
 - [App.vue](file:///d:/IoT/frontend/src/App.vue) — 根组件，仅 `<router-view/>`
-- [vite.config.ts](file:///d:/IoT/frontend/vite.config.ts) — `@` 别名指向 `src`；dev server `0.0.0.0:5173`；代理 `/api`、`/avatars`、`/courseware-files`、`/resource-files`、`/submission-files`、`/pest-images` 到后端 8000；`manualChunks` 拆分 echarts-vendor / vue-vendor
+- [vite.config.ts](file:///d:/IoT/frontend/vite.config.ts) — `@` 别名指向 `src`；dev server `0.0.0.0:5173`；代理 `/api`、`/avatars`、`/courseware-files`、`/resource-files`、`/submission-files`、`/pest-images` 到后端 8001；`manualChunks` 拆分 echarts-vendor / vue-vendor
 - [styles.css](file:///d:/IoT/frontend/src/styles.css) — 全局样式 + CSS 变量主题（烛光手记深色 / 羊皮纸浅色）
 
 ### 5.2 API 层 (`src/api/`)
@@ -457,7 +482,7 @@ export const http = axios.create({ baseURL: '/api/v1', timeout: 15000 })
 // 响应拦截：401 → auth.logout() + window.location.href 跳 /login?redirect=...
 ```
 
-其余 22 个模块（auth/users/device_nodes/sensors/rules/...）均基于 `http` 封装对应资源的 CRUD 请求，自动携带 JWT。
+其余 23 个模块（auth/users/device_nodes/sensors/rules/classrooms/groups/tasks/submissions/student/crops/logs/dashboard/analytics/courseware/resources/experiments/notifications/device_tokens/pest_diagnosis/mcp/ai）均基于 `http` 封装对应资源的 CRUD 请求，自动携带 JWT。
 
 ### 5.3 状态管理 ([`src/stores/auth.ts`](file:///d:/IoT/frontend/src/stores/auth.ts))
 
@@ -483,12 +508,12 @@ Pinia `useAuthStore`（组合式风格）：
 - `/student/*` — `StudentLayout` 子路由（8 个学生页面）
 - `/*` — `AdminLayout` 子路由（18 个管理页面）
 
-**`roleAccess` 表** — 路由名 → 允许角色数组（如 `devices: ['admin','teacher','operator']`）。
+**`roleAccess` 表** — 路由名 → 允许角色数组（如 `devices: ['admin','teacher']`）。
 
 **`beforeEach` 守卫逻辑：**
 1. 未 ready 则 `await auth.syncMe()`
 2. `requiresAuth` 但未登录 → 跳 `/login?redirect=`
-3. 已登录访问 `/login` → 按角色跳默认页（student→student-dashboard，operator→devices，其余→dashboard）
+3. 已登录访问 `/login` → 按角色跳默认页（student→student-dashboard，其余→dashboard）
 4. 学生只能访问 `/student/*`；非学生不能访问 `/student`
 5. 管理端路由按 `roleAccess` 拦截，越权跳默认页
 
@@ -510,6 +535,8 @@ Pinia `useAuthStore`（组合式风格）：
 - `SectionCard.vue` — 内容区块卡片
 - `LineChart.vue` — ECharts 折线图（主题适配）
 - `NotificationBell.vue` — 通知铃铛（未读数 + 下拉列表，WebSocket 实时刷新）
+- `AiAssistant.vue` — AI 助手悬浮按钮 + 右侧抽屉式聊天界面（v4.2，DeepSeek）
+- `AiMessage.vue` — AI 消息气泡（marked + DOMPurify 渲染 Markdown，显示模型标签 chat/深度思考）
 
 **组合式函数：**
 - [useTheme.ts](file:///d:/IoT/frontend/src/composables/useTheme.ts) — 主题切换（localStorage 持久化 + 0.35s 过渡）
@@ -519,7 +546,11 @@ Pinia `useAuthStore`（组合式风格）：
   - 30s 心跳（发送 `"ping"`）
   - 指数退避重连（1s→2s→4s→…→30s 上限）
   - 认证失败（4001/4003/1000）不重连
+  - 模块级单例，所有组件共享同一连接
+  - 数据上限（component_status/device_status 各 50 条，pest_diagnosis 20 条）
+  - 登出时 `auth.logout()` 调用 `reset()` 断开并清理
   - `onUnmounted` 自动断开
+- [useAI.ts](file:///d:/IoT/frontend/src/composables/useAI.ts) — AI 助手状态管理（v4.2）：会话 CRUD、消息流式接收、配额查询、模型标签标记
 
 ---
 
@@ -642,7 +673,7 @@ init_db ──► Base.metadata.create_all
 
 | 鉴权方式 | 适用对象 | 头格式 | 依赖函数 |
 |----------|----------|--------|----------|
-| 用户 JWT | 浏览器用户（admin/teacher/operator/student） | `Authorization: Bearer <jwt>` | `get_current_user` / `require_roles` |
+| 用户 JWT | 浏览器用户（admin/teacher/student） | `Authorization: Bearer <jwt>` | `get_current_user` / `require_roles` |
 | 设备 token | ESP32-CAM / ESP32-S3 等硬件 | `Authorization: Bearer <device_token>` | `get_device_context` |
 
 两者共用 Bearer 头但使用不同的 FastAPI security scheme（`OAuth2PasswordBearer` vs `HTTPBearer`），路由二选一。
@@ -747,12 +778,12 @@ pip install -r requirements.txt
 python -m app.scripts.init_db
 
 # 4. 启动 API（开发模式）
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
 ```
 
 启动后：
-- Swagger UI：http://127.0.0.1:8000/docs
-- 健康检查：http://127.0.0.1:8000/health
+- Swagger UI：http://127.0.0.1:8001/docs
+- 健康检查：http://127.0.0.1:8001/health
 
 ### 10.3 MQTT Broker（可选，IoT 设备通信）
 
@@ -773,7 +804,7 @@ npm run dev          # 开发服务器 http://localhost:5173
 npm run build        # 生产构建（vue-tsc 类型检查 + vite 打包）
 ```
 
-> Vite dev server 自动代理 `/api` 与各静态文件路径到后端 8000，无需额外配置。
+> Vite dev server 自动代理 `/api` 与各静态文件路径到后端 8001，无需额外配置。
 
 ### 10.5 默认账号
 
@@ -781,7 +812,6 @@ npm run build        # 生产构建（vue-tsc 类型检查 + vite 打包）
 |------|--------|------|------|
 | 管理员 | admin | 见 `.env` 中 `INIT_ADMIN_PASSWORD` | 所有权限 |
 | 教师 | teacher | Teacher123456 | 教学管理 |
-| 操作员 | operator | Operator123456 | 设备管理 |
 | 学生 | g1s1 | Student123456 | 学生端 |
 
 > 学生账号由教师在"小组概览"批量创建，命名规则 `g{组号}s{序号}`。
@@ -790,7 +820,7 @@ npm run build        # 生产构建（vue-tsc 类型检查 + vite 打包）
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `DATABASE_URL` | sqlite:///./data/greenhouse.db | 数据库连接 |
+| `DATABASE_URL` | mysql+pymysql://root:CHANGE_ME@localhost:3306/greenhouse?charset=utf8mb4 | MySQL 连接（必须通过 .env 配置） |
 | `JWT_SECRET_KEY` | — | JWT 密钥（生产必改） |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | 1440 | Token 有效期 |
 | `CORS_ORIGINS` | * | 跨域来源 |
@@ -799,27 +829,36 @@ npm run build        # 生产构建（vue-tsc 类型检查 + vite 打包）
 | `MQTT_BROKER_HOST` | localhost | MQTT 地址 |
 | `MQTT_BROKER_PORT` | 1883 | MQTT 端口 |
 
-### 10.7 切换 MySQL
+### 10.7 MySQL 数据库初始化
+
+项目默认使用 MySQL 8.0。首次使用步骤：
 
 ```bash
-# 1. 改 .env
-DATABASE_URL=mysql+pymysql://user:password@localhost:3306/greenhouse
-# 2. 装驱动
+# 1. 创建数据库（utf8mb4 支持中文和 emoji）
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS greenhouse CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+
+# 2. 在 .env 配置连接串
+# DATABASE_URL=mysql+pymysql://root:密码@localhost:3306/greenhouse?charset=utf8mb4
+
+# 3. 安装驱动（已在 requirements.txt）
 pip install pymysql
-# 3. 重新初始化
+
+# 4. 初始化表 + 种子数据
 python -m app.scripts.init_db
 ```
+
+> 测试环境（pytest）使用 SQLite 内存数据库，无需 MySQL 即可运行测试。
 
 ### 10.8 生产部署建议
 
 ```bash
 # Gunicorn + Uvicorn workers
-gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
+gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8001
 ```
 
 - 修改 `JWT_SECRET_KEY` 为强随机串
 - `CORS_ORIGINS` 设为具体前端域名
-- 用 MySQL/PostgreSQL 替代 SQLite
+- MySQL 连接池配置 `pool_recycle=3600`（避免 8 小时空闲断开）
 - Nginx 反向代理，前端静态文件由 Nginx 直接提供
 
 ---
@@ -835,7 +874,7 @@ gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
 | [test_api.py](file:///d:/IoT/tests/test_api.py) | API 集成测试 | 全部端点（含设备鉴权 / 病虫害诊断 / MCP） |
 | [test_e2e.py](file:///d:/IoT/tests/test_e2e.py) | 端到端测试 | 完整教学流程 |
 
-**共计 314 项测试全部通过。**
+**共计 365 项测试全部通过。**
 
 ### 11.2 运行测试
 

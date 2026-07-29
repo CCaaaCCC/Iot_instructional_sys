@@ -213,7 +213,7 @@ const subtitleMap: Record<string, string> = {
   sensors: '查看历史曲线和最新采集值',
   rules: '配置自动控制规则并追踪触发日志',
   logs: '统一查看操作日志、设备日志和规则日志',
-  users: '管理员维护管理员/教师/操作员账号',
+  users: '管理员维护管理员/教师账号',
   crops: '维护作物档案与生长阶段信息',
   tasks: '管理课堂任务和教学安排',
   classrooms: '创建班级、选择科目、展开查看小组',
@@ -231,12 +231,11 @@ const subtitleMap: Record<string, string> = {
 const roleLabels: Record<string, string> = {
   admin: '管理员',
   teacher: '教师',
-  operator: '操作员',
 }
 
 const roleAccess: Record<string, Array<string>> = {
   dashboard: ['admin', 'teacher'],
-  devices: ['admin', 'teacher', 'operator'],
+  devices: ['admin', 'teacher'],
   sensors: ['admin', 'teacher'],
   rules: ['admin', 'teacher'],
   logs: ['admin', 'teacher'],
@@ -251,8 +250,8 @@ const roleAccess: Record<string, Array<string>> = {
   courseware: ['admin', 'teacher'],
   resources: ['admin', 'teacher'],
   experiments: ['admin', 'teacher'],
-  'pest-diagnoses': ['admin', 'teacher', 'operator'],
-  'mcp-tools': ['admin', 'teacher', 'operator'],
+  'pest-diagnoses': ['admin', 'teacher'],
+  'mcp-tools': ['admin', 'teacher'],
 }
 
 const title = computed(() => titleMap[String(route.name)] ?? '智慧大棚后台')

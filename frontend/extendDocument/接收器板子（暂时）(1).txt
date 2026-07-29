@@ -1,0 +1,172 @@
+#include <Adafruit_NeoPixel.h>
+#include <PID_v1.h> 
+
+#define WATER_RELAY_PIN  34  // 水泵继电器引脚，自行修改为实际接线
+#define FAN_RELAY_PIN    33  // 风扇继电器引脚，自行修改为实际接线
+#define UART1_RX_PIN 17  // 定义 UART1 的接收引脚（RX）
+#define UART1_TX_PIN 16  // 定义 UART1 的发送引脚（TX）
+#define LED_PIN     2
+#define LED_COUNT   12
+#define LED_R 255  
+#define LED_G 255
+#define LED_B 230
+
+const int FAN_TEMP_THRESHOLD = 30; // 风扇启动温度阈值，单位℃
+const int LIGHT_THRESHOLD = 2000;   // 目标光强（希望传感器稳定在此值附近）
+const int HYSTERESIS = 180;         // 此处不再使用，但保留无妨
+const int ADC_MIN = 0;
+const int ADC_MAX = 4095;
+const int LED_MIN_BRIGHT = 0;
+const int LED_MAX_BRIGHT = 180;
+const int humidityThreshold = 100;
+
+
+Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+// ==================== PID 变量 ====================
+int soilHumValue = 0;   // 存储B板发来的土壤湿度值
+float tempValue = 0;    // 存储B板发来的温度值（用于控制风扇）
+double Setpoint = LIGHT_THRESHOLD;   // 目标值
+double Input = LIGHT_THRESHOLD;      // 初始值设为目标亮度，避免上电无数据时灯带乱跳
+double Output;
+double Kp = 0.4, Ki = 0, Kd = 0; // 初始参数，需调优
+PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT); // 方向：REVERSE
+
+void setFillWhite() {
+  for(int i = 0; i < LED_COUNT; i++){
+    strip.setPixelColor(i, LED_R, LED_G, LED_B);
+  }
+  strip.show();
+}
+static int lastBright = 0;   // 上一次的亮度值，声明在 loop 外
+
+void setup() {
+  // put your setup code here, to run once:
+  Serial.begin(9600);
+  Serial1.begin(9600, SERIAL_8N1, UART1_RX_PIN, UART1_TX_PIN);
+  analogReadResolution(12);
+  strip.begin();
+  strip.clear();
+  strip.show();
+
+  // PID 初始化
+  myPID.SetOutputLimits(LED_MIN_BRIGHT, LED_MAX_BRIGHT);
+  myPID.SetMode(AUTOMATIC);
+  myPID.SetSampleTime(200);   // 与主循环延时一致，提高稳定性
+
+  analogReadResolution(12);
+  pinMode(WATER_RELAY_PIN, OUTPUT);
+  pinMode(FAN_RELAY_PIN, OUTPUT);
+  digitalWrite(WATER_RELAY_PIN, LOW);
+  digitalWrite(FAN_RELAY_PIN, LOW);
+
+
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+
+if (Serial1.available() > 0) {
+    // 1. 读取一整行数据（直到遇到换行符）
+    String line = Serial1.readStringUntil('\n');
+    
+    // 去除首尾可能存在的空白字符或回车符，防止解析失败
+    line.trim(); 
+
+    float val = 0; // 用于存储解析出的数值
+
+    // 2. 判断前缀并分别解析
+    if (line.startsWith("tem:")) {
+        // --- 处理温度数据 ---
+        // 格式匹配：tem:数值
+        if (sscanf(line.c_str(), "tem:%f", &val) == 1) {
+            Serial.print("收到温度:");
+            Serial.println(val);
+            
+            // 在这里调用你的温度处理函数，例如：
+            // updateTempDisplay(val); 
+        }
+    } 
+    else if (line.startsWith("hum:")) {
+
+        if (sscanf(line.c_str(), "hum:%f", &val) == 1) {
+            Serial.print("收到湿度: ");
+            Serial.println(val);
+        }
+    } 
+else if (line.startsWith("light:")) {
+    if (sscanf(line.c_str(), "light:%f", &val) == 1) {
+        Serial.print("收到亮度:");
+        Serial.println(val);
+        Input = val;  // 新增：把收到的光线值送入PID
+    }
+}
+    else if (line.startsWith("ppm:")) {
+
+        if (sscanf(line.c_str(), "ppm:%f", &val) == 1) {
+            Serial.print("收到co2浓度:");
+            Serial.println(val);
+        }
+    } 
+    else if (line.startsWith("ph:")) {
+        // --- 处理 pH 数据 ---
+        // 格式匹配：ph:数值
+        if (sscanf(line.c_str(), "ph:%f", &val) == 1) {
+            Serial.print("收到pH 值:");
+            Serial.println(val);
+            
+            // 在这里调用你的 pH 处理函数，例如：
+            // updatePhDisplay(val);
+        }
+    } 
+else if (line.startsWith("soilHum:")) {
+    if (sscanf(line.c_str(),"soilHum:%f", &val) == 1) {
+        Serial.print("收到土壤湿度:");
+        Serial.println(val);
+        soilHumValue = (int)val; // 新增：保存土壤湿度值
+    }
+      Serial.println();
+      Serial.println();
+    } 
+    else {
+        // 可选：处理无法识别的指令
+        Serial.print("未知指令: ");
+        Serial.println(line);
+    }
+    delay(300);
+}
+
+  if (abs(Setpoint - Input) > 100) {
+    myPID.Compute();
+  }
+
+  int ledBright = constrain((int)Output, LED_MIN_BRIGHT, LED_MAX_BRIGHT);
+
+  // 限制亮度每次变化幅度（防止突变闪烁）
+  if (abs(ledBright - lastBright) > 10) {   // 一次最多变10
+    
+    if (ledBright > lastBright) ledBright = lastBright + 10;
+    else ledBright = lastBright - 10;
+  }
+  lastBright = ledBright;
+
+  strip.setBrightness(ledBright);
+  setFillWhite();
+  Serial.println(ledBright);
+  delay(200);
+
+  unsigned long now = millis();
+    // 水泵控制：土壤湿度低于阈值启动
+if (soilHumValue > humidityThreshold) {
+    digitalWrite(WATER_RELAY_PIN, HIGH);
+} else {
+    digitalWrite(WATER_RELAY_PIN, LOW);
+}
+
+// 风扇控制：温度高于阈值启动
+if (tempValue > FAN_TEMP_THRESHOLD) {
+    digitalWrite(FAN_RELAY_PIN, HIGH);
+} else {
+    digitalWrite(FAN_RELAY_PIN, LOW);
+}
+}

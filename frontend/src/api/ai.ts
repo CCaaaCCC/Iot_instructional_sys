@@ -3,11 +3,8 @@ import { TOKEN_KEY } from '@/stores/auth'
 import type { ChatSession, ChatMessage, ChatContext, AiQuota } from '@/types'
 
 const baseURL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
-// 开发环境下 SSE 直接访问后端，避免 Vite 代理在关闭流时触发 net::ERR_ABORTED
-const sseBaseURL =
-  import.meta.env.DEV && !baseURL.startsWith('http')
-    ? 'http://127.0.0.1:8000/api/v1'
-    : baseURL
+// SSE 走相对路径，由 Vite proxy 转发到后端（避免硬编码端口）
+const sseBaseURL = baseURL
 
 /** 判断是否为 SSE 流正常关闭/被中止的已知错误。
  *

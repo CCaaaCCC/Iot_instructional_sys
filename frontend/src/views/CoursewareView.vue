@@ -130,7 +130,6 @@
           </tbody>
         </table>
         <div v-else class="empty-state">
-          <div class="empty-state-icon">📂</div>
           暂无课件，上传你的第一个课件吧
         </div>
       </SectionCard>
@@ -202,7 +201,6 @@
           </tbody>
         </table>
         <div v-else class="empty-state">
-          <div class="empty-state-icon">📚</div>
           公共课件库暂无资源
         </div>
       </SectionCard>

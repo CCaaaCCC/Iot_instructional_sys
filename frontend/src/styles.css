@@ -1760,9 +1760,20 @@ a {
   height: 48px;
   display: grid;
   place-items: center;
-  font-size: 24px;
+  font-size: 11px;
+  font-weight: 700;
   background: var(--primary-soft);
   border-radius: 6px;
+  flex-shrink: 0;
+  letter-spacing: -0.5px;
+}
+
+.file-icon {
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--primary-soft);
+  padding: 2px 6px;
+  border-radius: 4px;
   flex-shrink: 0;
 }
 

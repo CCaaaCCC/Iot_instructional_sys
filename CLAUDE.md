@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Smart greenhouse teaching management platform for primary school science/labor classes. FastAPI backend + Vue 3 frontend + MQTT for IoT device communication. Four user roles: admin, teacher, operator, student.
+Smart greenhouse teaching management platform for primary school science/labor classes. FastAPI backend + Vue 3 frontend + MQTT for IoT device communication. Three user roles: admin, teacher, student.
 
 ## Commands
 
@@ -12,14 +12,14 @@ Smart greenhouse teaching management platform for primary school science/labor c
 # Backend
 pip install -r requirements.txt                          # Install dependencies
 python -m app.scripts.init_db                            # Initialize DB + seed data + migrations
-uvicorn app.main:app --reload --port 8000                # Start dev server
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8001 # Start dev server
 
 # Frontend
 cd frontend && npm install && npm run dev                # Start Vite dev server (:5173)
 cd frontend && npm run build                             # Production build (vue-tsc + vite)
 
 # Testing
-pytest tests/ -v                                         # All tests (314 items)
+pytest tests/ -v                                         # All tests (365 items)
 pytest tests/test_unit.py -v                             # Schema/enum unit tests
 pytest tests/test_api.py -v                              # API integration tests
 pytest tests/test_e2e.py -v                              # E2E flow tests
@@ -30,20 +30,24 @@ python scripts/smoke_test_teacher.py                     # Teacher E2E smoke tes
 mosquitto -v                                             # Start Mosquitto locally
 
 # Hardware Simulation (for testing without physical devices)
-python simulate_hardware.py [--interval 5] [--duration 120]
+python simulate_hardware.py --node-id 1 [--interval 5] [--duration 0]  # 0 = infinite
+python mcp_bridge.py                                         # MCP bridge to xiaozhi.me
 ```
 
 ## Architecture
 
-### IoT Hardware — Three Device Types
+### IoT Hardware — Four Device Types
 
 | Device | Role | Communication | Auth |
 |--------|------|--------------|------|
 | **ESP32** | Main node: sensors + actuators (fan/pump/light) | MQTT (`greenhouse/sensor/data`, `greenhouse/device/control`) | Device token via `get_device_context` for HTTP, MQTT publishes as device |
 | **ESP32-CAM** | Camera: plant pest diagnosis image upload | HTTP POST `/api/v1/pest-diagnoses/upload` | Device token (only `esp32cam` type allowed) |
 | **ESP32-S3 (小智 AI)** | Voice AI assistant: queries sensor data, controls actuators, checks tasks/crops | HTTP via MCP protocol: `GET /mcp/tools`, `POST /mcp/tools/call` | Device token (6 read+control tools, all auto-scoped to `group_id`) |
+| **ESP32-S3 Monitor** | TFT dashboard upper computer: reports sensor data + receives actuator control commands via UART to lower computer | MQTT (`greenhouse/sensor/data`, `greenhouse/device/control`, `greenhouse/device/status`) | MQTT publishes as device (no token auth on broker); device token for HTTP if needed |
 
-Each group has 3 device tokens (one per device type), all bound to the same `group_id`. Tokens are created/reset/revoked via `/device-tokens` endpoints.
+Each group has device tokens (one per device type), all bound to the same `group_id`. Tokens are created/reset/revoked via `/device-tokens` endpoints.
+
+> **Note on `esp32s3` vs `esp32s3_monitor`**: These are two physically distinct ESP32-S3 boards. `esp32s3` is the 小智 AI voice assistant (MCP protocol); `esp32s3_monitor` is the TFT dashboard upper computer (MQTT protocol, reports sensor data + receives control commands). Do not confuse them.
 
 ### Layered Backend (3-tier)
 
@@ -55,7 +59,7 @@ schemas/ (Pydantic v2 — request/response validation)
 
 - **Routers** are thin: parse input → call service → return result. Catch `ValueError` → HTTP 400. After mutating operations, call `log_service.create_operation_log(db, ...)` for audit trail.
 - **Services** contain all business logic. They receive `db: Session` as first param and use SQLAlchemy 2.0-style `select()` / `db.get()` / `db.execute()`. Services call other services directly (e.g., `sensor_service.create_sensor_data` calls `rule_service.evaluate_rules`).
-- **Models** define `id` as auto-increment PK. Use `from app.models.enums import *` for enum types. `UserRole`, `ComponentType`, `ComponentStatus`, `SensorMetric`, `RuleOperator`, `TaskStatus`, `CourseSubject`, `TaskType`, `ExperimentStatus`, `ExperimentRole`, `DeviceType` (esp32/esp32cam/esp32s3), `DiagnosisResult` (6 plant disease categories).
+- **Models** define `id` as auto-increment PK. Use `from app.models.enums import *` for enum types. `UserRole`, `ComponentType`, `ComponentStatus`, `SensorMetric`, `RuleOperator`, `TaskStatus`, `CourseSubject`, `TaskType`, `ExperimentStatus`, `ExperimentRole`, `DeviceType` (esp32/esp32cam/esp32s3/esp32s3_monitor), `DiagnosisResult` (5 plant disease categories: tomato/strawberry × healthy/disease).
 - **Schemas** mirror models with `*Create` (input), `*Out` (response with `model_config = ConfigDict(from_attributes=True)`), `*Update` (optional fields).
 
 ### Operation Logging Pattern
@@ -83,8 +87,7 @@ Uses a separate `submission_files` table (one-to-many). Router accepts `files: l
 ### Data Directory Structure
 
 ```
-data/
-  greenhouse.db              # SQLite database
+data/                         # File upload storage (database managed by MySQL)
   avatars/                   # User profile photos (mounted at /avatars)
   courseware/                # Teacher courseware files (mounted at /courseware-files)
   resources/                 # Teaching resource files (mounted at /resource-files)
@@ -115,7 +118,7 @@ Uses `pydantic-settings` with `.env` file auto-load. All settings accessed via `
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATABASE_URL` | `sqlite:///./data/greenhouse.db` | SQLite path |
+| `DATABASE_URL` | `mysql+pymysql://root:CHANGE_ME@localhost:3306/greenhouse?charset=utf8mb4` | MySQL connection (must override via .env) |
 | `JWT_SECRET_KEY` | (required) | HMAC signing key |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | 1440 (24h) | JWT lifetime |
 | `CORS_ORIGINS` | `*` | CORS allowed origins |
@@ -138,17 +141,19 @@ Uses `pydantic-settings` with `.env` file auto-load. All settings accessed via `
 ### Database: `app/db/session.py`
 
 - Module-level `engine` and `SessionLocal`. **Do not** create additional engines.
-- SQLite: `check_same_thread=False`, foreign keys enabled via `PRAGMA` on connect.
-- `AUTO_CREATE_DB=true` triggers `init_db()` at startup (creates tables, runs SQLite schema migrations for nullable columns, seeds admin + sample data if not present).
+- MySQL: `pool_pre_ping=True` (connection liveness check) + `pool_recycle=3600` (hourly recycle to avoid MySQL `wait_timeout` disconnect). InnoDB engine enables foreign keys by default (no PRAGMA needed).
+- `AUTO_CREATE_DB=true` triggers `init_db()` at startup (creates tables via `Base.metadata.create_all()`, seeds admin + sample data if not present).
+- Test environment (`tests/conftest.py`) still uses SQLite in-memory DB for speed and isolation.
 
 ### Schema Migrations
 
-No Alembic. Schema changes applied in `app/scripts/init_db.py` as inline SQLite `PRAGMA table_info()` + table-recreate logic (e.g., making `task_submissions.content` nullable, adding `experiments.updated_at` via `ALTER TABLE`). Always idempotent (checks current schema before altering).
+No Alembic. Schema changes are applied by `Base.metadata.create_all()` in `app/scripts/init_db.py` (creates tables that don't exist). For existing tables needing schema changes, delete the MySQL database and re-run `init_db()` (dev data is disposable). Historical SQLite PRAGMA-based migrations have been removed after the MySQL migration.
 
 ### MQTT Integration + WebSocket: `app/core/mqtt_client.py` + `app/core/websocket_manager.py`
 
 - **MQTT** managed via FastAPI lifespan: `start_mqtt()` at startup, `stop_mqtt()` at shutdown. Auto-reconnect with exponential backoff (1s→120s).
 - Subscribes to `greenhouse/sensor/data` and `greenhouse/device/status`. Publishes control commands to `greenhouse/device/control`.
+- **Control payload** (`publish_component_control`) includes `component_type` field (fan/pump/light) so MQTT devices (e.g. `esp32s3_monitor`) can map directly to actuators without reverse-looking-up the DB. The field is backward-compatible (omitted when empty).
 - Health check at `GET /health` returns `{"status": "ok", "mqtt": "connected|disconnected"}`.
 - **WebSocket** (`/ws?token={jwt}`) pushes real-time events to frontend via `ConnectionManager` singleton.
 - Events: `sensor_data`, `component_status`, `device_status`, `pest_diagnosis`, `notification`. Scoped by `node_id` — students only see their group's data.
@@ -163,9 +168,11 @@ No Alembic. Schema changes applied in `app/scripts/init_db.py` as inline SQLite 
 
 1. ESP32-CAM uploads image via `POST /pest-diagnoses/upload` (device token auth, only `esp32cam` type allowed)
 2. Image saved to `data/pest-images/` as `{device_token_id}_{unix_ts}_{random_hex}.{ext}`
-3. `pest_diagnosis_service.create_diagnosis()` runs **mock AI** — randomly picks from 6 `DiagnosisResult` enum values (tomato/cucumber × healthy/disease) with confidence 0.75–0.99
+3. `pest_diagnosis_service.create_diagnosis()` runs **ResNet50 真实推理** — PyTorch 模型懒加载（首次推理时加载，之后复用），对图片进行 5 分类（番茄/草莓 × 健康/病害），返回 Top-1 类别 + softmax 置信度。模型文件位于 `models/pest_model.pth`，可通过环境变量 `PEST_MODEL_PATH` 覆盖。自动检测 CUDA（有 GPU 时用 GPU，否则 CPU）。
 4. Result pushed via WebSocket (`pest_diagnosis` event, scoped to `node_id`)
 5. Notification created for admin + teacher users with link to pest diagnosis page
+
+> **测试环境**：`tests/conftest.py` 的 `_mock_ai_classify` autouse fixture 用 monkeypatch 替换 `ai_classify` 为确定性哈希分类（无需安装 PyTorch/模型文件）。
 
 ### MCP Integration (ESP32-S3 / 小智 AI)
 
@@ -205,7 +212,7 @@ Key design points:
 - **Shared components** (`frontend/src/components/`): `StatCard.vue`, `SectionCard.vue`, `LineChart.vue` (ECharts wrapper, re-renders on theme change), `NotificationBell.vue`.
 - **WebSocket composable** (`frontend/src/composables/useWebSocket.ts`): **模块级单例**（所有组件共享同一连接），auto-connects via native WebSocket API, JWT extracted from localStorage. Exponential backoff reconnect (1s→30s max), 30s heartbeat (`ping`/`pong`). Returns `{ connected, latestSensorData, componentUpdates, deviceStatuses, pestDiagnoses, latestNotification, disconnect, reset }`. 数据有上限（component_status/device_status 各保留 50 条，pest_diagnosis 保留 20 条）。认证失败（4001/4003）不重连。登出时 `auth.logout()` 调用 `reset()` 断开并清理。Both layouts `watch(latestNotification)` to refresh `NotificationBell` in real time.
 - **Axios interceptor** (`frontend/src/api/http.ts`): auto-attaches Bearer token from localStorage. 401 → clears auth store → redirects to `/login`.
-- **Vite proxy**: `/api`, `/avatars`, `/courseware-files`, `/resource-files`, `/submission-files`, `/pest-images` → `http://127.0.0.1:8000` (configure with `VITE_PROXY_TARGET`).
+- **Vite proxy**: `/api`, `/avatars`, `/courseware-files`, `/resource-files`, `/submission-files`, `/pest-images` → `http://127.0.0.1:8001` (configure with `VITE_PROXY_TARGET`).
 - **Theme**: CSS variables with `data-theme` attribute. `useTheme` composable persists to localStorage.
 - **API modules** (`frontend/src/api/*.ts`): one file per resource, imports shared `http` instance.
 - **Types** in `frontend/src/types.ts` mirror backend enums and models exactly (keep in sync when adding enums).
@@ -236,7 +243,7 @@ Student endpoints: `GET /student/me/analytics`, `GET /student/me/resources`, `GE
 
 Built on DeepSeek API (OpenAI-compatible). Conversational assistant for students (learning help) and teachers (teaching prep). Suspended button + right-side drawer UI, persistent chat history, SSE streaming, dual-model switching.
 
-- **API prefix**: `/ai`. Roles: admin / teacher / student (operator forbidden).
+- **API prefix**: `/ai`. Roles: admin / teacher / student.
 - **Data models**: `ChatSession` (user-isolated, cascade delete messages), `ChatMessage` (role/content/model_used), `AiQuotaUsage` (independent `(user_id, date)` UNIQUE counter — deleting sessions never resets quota).
 - **Config** (`app/core/config.py`): `DEEPSEEK_API_KEY` (empty = unconfigured, endpoints return 503-like error event), `DEEPSEEK_BASE_URL`, `DEEPSEEK_MODEL_CHAT` / `DEEPSEEK_MODEL_REASONER`, `AI_DAILY_QUOTA=50`, `AI_CONTEXT_WINDOW=10`, `AI_SESSION_TITLE_MAXLEN=30`, `AI_REQUEST_TIMEOUT=60`.
 - **Dual-model switch**: keyword rule matching in `ai_service.select_model()` — messages containing `_REASONER_KEYWORDS` (为什么/分析/解释原理/设计/制定/推理/对比/评估/...) use `deepseek-reasoner`, otherwise `deepseek-chat`.
@@ -250,7 +257,7 @@ Built on DeepSeek API (OpenAI-compatible). Conversational assistant for students
 - **Empty session cleanup**: When `POST /ai/chat` creates a new session but `stream_chat` fails early (API unconfigured or quota exceeded), the empty session is deleted via `is_new_session` flag passed from router to service — no orphan "新对话" sessions left in DB.
 - **Session isolation**: `ChatSession.user_id == current_user.id` enforced in service layer — teachers cannot read students' conversations (privacy-first).
 - **System prompt**: role-aware persona (student: 「棚棚小助手」, 通俗语言, ≤300 字; teacher: 教学助手, 专业简洁, ≤500 字) + page context injection (`ChatContext.route_name` + `page_data`).
-- **Frontend**: floating button (bottom-right) + right drawer (`AiAssistant.vue`), `useAI` composable per layout (non-singleton), `AiMessage.vue` renders Markdown via `marked` + `DOMPurify`. Streaming via `fetch` + `ReadableStream` (EventSource cannot set Authorization header). Operator role hides the floating button.
+- **Frontend**: floating button (bottom-right) + right drawer (`AiAssistant.vue`), `useAI` composable per layout (non-singleton), `AiMessage.vue` renders Markdown via `marked` + `DOMPurify`. Streaming via `XMLHttpRequest` + `onprogress` (EventSource cannot set Authorization header, fetch cannot detect `ERR_ABORTED`). Uses `processedLength` variable to track already-parsed response text. Operator role hides the floating button.
 - **Cleanup**: `ai_service.cleanup_old_sessions(days=180)` called by `init_db()` at startup.
 
 ### Key Relationships

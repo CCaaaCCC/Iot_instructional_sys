@@ -9,7 +9,7 @@
 环境变量：
     MCP_ENDPOINT  - 小智后台 MCP 接入点（完整 WebSocket URL，从 xiaozhi.me 控制台获取）
     DEVICE_TOKEN  - 设备 token（从后台 /device-tokens 获取 esp32s3 类型）
-    LOCAL_API_BASE - 本地后端地址，默认 http://127.0.0.1:8000
+    LOCAL_API_BASE - 本地后端地址，默认 http://127.0.0.1:8001
 
 使用方式：
     1. 设置环境变量 MCP_ENDPOINT 和 DEVICE_TOKEN
@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 MCP_ENDPOINT = os.getenv("MCP_ENDPOINT", "")
 DEVICE_TOKEN = os.getenv("DEVICE_TOKEN", "")
-LOCAL_API_BASE = os.getenv("LOCAL_API_BASE", "http://127.0.0.1:8000")
+LOCAL_API_BASE = os.getenv("LOCAL_API_BASE", "http://127.0.0.1:8001")
 RECONNECT_DELAY = 5
 MAX_RECONNECT_DELAY = 60
 
@@ -204,6 +204,12 @@ async def handle_mcp_message(ws, message: str):
             response = make_response(msg_id, {"tools": TOOLS})
             await ws.send(response)
             logger.info(f"已响应 tools/list: {len(TOOLS)} 个工具")
+
+        # 2.5. ping - 保持连接心跳（JSON-RPC 2.0 标准方法）
+        elif method == "ping":
+            response = make_response(msg_id, {})
+            await ws.send(response)
+            logger.debug("已响应 ping")
 
         # 3. tools/call - 调用工具
         elif method == "tools/call":

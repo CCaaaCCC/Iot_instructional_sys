@@ -21,7 +21,6 @@
       </template>
 
       <div v-if="!submissions.length" class="empty-state">
-        <div class="empty-state-icon">📝</div>
         {{ filterReviewed === 'false' ? '暂无待批阅提交' : '暂无提交记录' }}
       </div>
 
@@ -58,7 +57,7 @@
                     @click="previewFile = file"
                     :title="file.original_name"
                   />
-                  <span v-else class="file-icon-box">{{ fileTypeEmoji(file.file_type) }}</span>
+                  <span v-else class="file-icon-box">{{ fileTypeLabel(file.file_type) }}</span>
                   <a
                     :href="file.file_url"
                     :download="file.original_name"
@@ -146,14 +145,14 @@ function isImageType(mime: string): boolean {
   return mime.startsWith('image/')
 }
 
-function fileTypeEmoji(mime: string): string {
-  if (mime.startsWith('image/')) return '🖼️'
-  if (mime.includes('pdf')) return '📕'
-  if (mime.includes('powerpoint') || mime.includes('presentation')) return '📊'
-  if (mime.includes('word') || mime.includes('document')) return '📝'
-  if (mime.includes('text')) return '📄'
-  if (mime.startsWith('video/')) return '🎬'
-  return '📎'
+function fileTypeLabel(mime: string): string {
+  if (mime.startsWith('image/')) return 'IMG'
+  if (mime.includes('pdf')) return 'PDF'
+  if (mime.includes('powerpoint') || mime.includes('presentation')) return 'PPT'
+  if (mime.includes('word') || mime.includes('document')) return 'DOC'
+  if (mime.includes('text')) return 'TXT'
+  if (mime.startsWith('video/')) return 'VID'
+  return 'FILE'
 }
 
 function formatFileSize(bytes: number): string {

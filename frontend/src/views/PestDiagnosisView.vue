@@ -23,7 +23,6 @@
       <div v-if="error" class="msg-error">{{ error }}</div>
 
       <div v-if="!diagnoses.length" class="empty-state">
-        <div class="empty-state-icon">📷</div>
         暂无诊断记录
       </div>
 
@@ -101,9 +100,8 @@ const resultOptions: { value: DiagnosisResult; label: string }[] = [
   { value: 'tomato_healthy', label: '番茄健康' },
   { value: 'tomato_early_blight', label: '番茄早疫病' },
   { value: 'tomato_late_blight', label: '番茄晚疫病' },
-  { value: 'cucumber_healthy', label: '黄瓜健康' },
-  { value: 'cucumber_powdery_mildew', label: '黄瓜白粉病' },
-  { value: 'cucumber_anthracnose', label: '黄瓜炭疽病' },
+  { value: 'strawberry_healthy', label: '草莓健康' },
+  { value: 'strawberry_leaf_scorch', label: '草莓叶焦病' },
 ]
 
 function resultLabel(result: string): string {

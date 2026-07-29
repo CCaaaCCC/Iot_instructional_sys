@@ -53,7 +53,6 @@
       <div v-if="logsError" class="msg-error">{{ logsError }}</div>
 
       <div v-if="!logs.length" class="empty-state">
-        <div class="empty-state-icon">🤖</div>
         暂无调用日志，等待小智 AI 发起工具调用
       </div>
 

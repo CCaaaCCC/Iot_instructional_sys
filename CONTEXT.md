@@ -1,7 +1,7 @@
 # 智慧大棚教学系统 — 项目上下文
 
-> 最后更新：2026-07-15
-> 适用版本：v4.1（IoT 硬件整合：设备鉴权 + ESP32-CAM 病虫害诊断 + 小智 AI MCP，API 122 端点）
+> 最后更新：2026-07-20
+> 适用版本：v4.2（AI 教学助手 DeepSeek + ESP32 硬件模拟器 + MCP 桥接，API 122 端点）
 
 ---
 
@@ -15,7 +15,6 @@
 |:--|:--|:--|:--|
 | **管理员** | 学校信息中心 | Vue 管理后台（JWT 登录） | 用户管理、操作日志、所有教学功能 |
 | **教师** | 劳动课/科学课任课老师 | Vue 管理后台（JWT 登录） | 班级/小组/任务/批阅/设备/规则/作物管理 |
-| **操作员** | 大棚现场工作人员 | Vue 管理后台（JWT 登录） | 设备节点查看、组件控制、传感器数据 |
 | **学生** | 小学生 | Vue 学生端（JWT 登录） | 查看任务、提交作业、查看环境数据（含图表）、个人中心（头像/昵称/密码） |
 
 ### 架构图
@@ -28,16 +27,20 @@
 │   └─ 执行器组件（风扇/水泵/补光灯）                   │
 │                                                      │
 │  ESP32-CAM 视觉节点 ──HTTP──┐  （设备 token 鉴权）    │
-│   └─ 拍照上传 → 病虫害诊断（mock AI 6 分类）         │
+│   └─ 拍照上传 → 病虫害诊断（ResNet50 5 分类）        │
 │                                                      │
 │  ESP32-S3 小智 AI ──HTTP──┐  （设备 token 鉴权）      │
 │   └─ MCP 工具调用（6 个工具：传感器/控制/作物/任务） │
+│                                                      │
+│  ESP32-S3 TFT 上位机 ──MQTT──┐  （MQTT 设备鉴权）    │
+│   ├─ UART 接收下位机传感器数据 → TFT 显示 + MQTT 上报│
+│   └─ MQTT 接收执行器控制 → UART 下行到下位机         │
 │                         ▼                            │
-└─────────────────── FastAPI 后端 :8000 ────────────────┘
+└─────────────────── FastAPI 后端 :8001 ────────────────┘
                                │
                     ┌──────────┼──────────┐
                     ▼          ▼          ▼
-               Mosquitto    SQLite    Vue 前端
+               Mosquitto    MySQL     Vue 前端
                MQTT Broker  数据库    管理/学生后台 :5173
 ```
 
@@ -57,10 +60,11 @@
                              ├─ 设备令牌 (DeviceToken) ─ 绑定小组 + 节点
                              │       ├─ esp32（MQTT 传感器上报）
                              │       ├─ esp32cam（HTTP 病虫害诊断上传）
-                             │       └─ esp32s3（HTTP MCP 工具调用）
+                             │       ├─ esp32s3（HTTP MCP 工具调用）
+                             │       └─ esp32s3_monitor（MQTT 上位机：传感器上报 + 执行器控制）
                              │
                              ├─ 病虫害诊断 (PestDiagnosis) ─ esp32cam 上传
-                             │       └─ mock AI 6 分类（番茄/黄瓜 × 健康/病害）
+                             │       └─ ResNet50 5 分类（番茄/草莓 × 健康/病害）
                              │
                              └─ MCP 调用日志 (McpCallLog) ─ esp32s3 调用
                                      └─ 30 天自动清理（expires_at）
@@ -88,7 +92,7 @@
 | 层 | 技术 | 说明 |
 |:--|:--|:--|
 | 后端框架 | FastAPI 0.115 | Python 异步 Web 框架 |
-| 数据库 ORM | SQLAlchemy 2.0 | ORM + SQLite |
+| 数据库 ORM | SQLAlchemy 2.0 | ORM + MySQL 8.0（pymysql 驱动，utf8mb4） |
 | 认证 | JWT (python-jose) | OAuth2 Password Bearer（表单格式登录） |
 | 密码哈希 | passlib + bcrypt (4.0.x) | 单向哈希存储，bcrypt 限制 72 字节 |
 | MQTT | paho-mqtt 2.1 + Mosquitto | 设备通信 |
@@ -113,7 +117,8 @@
 d:\IoT\
 ├── .env                          # 环境变量（含 MQTT 配置）
 ├── requirements.txt              # Python 依赖
-├── simulate_hardware.py          # 硬件模拟器（待适配新模型）
+├── simulate_hardware.py          # 硬件模拟器（ESP32 传感器/执行器模拟，MQTT 通信）
+├── mcp_bridge.py                 # MCP 桥接器（连接小智 AI 官方后台）
 ├── README.md
 ├── CONTEXT.md
 ├── app/
@@ -211,14 +216,13 @@ d:\IoT\
 │       └── layouts/              # AdminLayout, StudentLayout
 ├── scripts/
 │   └── smoke_test_teacher.py     # 教师端 E2E 冒烟测试（19 项）
-├── data/
-│   ├── greenhouse.db             # SQLite 数据库
+├── data/                         # 文件上传存储（数据库由 MySQL 管理）
 │   ├── avatars/                  # 用户头像上传目录
 │   ├── courseware/               # 课件文件（50MB 限制）
 │   ├── resources/                # 教学资源文件
 │   ├── submissions/              # 作业提交附件
 │   └── pest-images/              # 病虫害诊断图片（ESP32-CAM 上传，v4.1 新增）
-└── tests/                        # 测试套件（314 项，含设备鉴权+病虫害诊断+MCP）
+└── tests/                        # 测试套件（365 项，含设备鉴权+病虫害诊断+MCP+AI 助手）
     ├── conftest.py               # 测试 fixtures（含 student_token）
     ├── test_api.py               # API 集成测试
     ├── test_unit.py              # Schema/枚举单元测试
@@ -231,35 +235,35 @@ d:\IoT\
 
 > 以下权限以**后端路由 `require_roles` 实际校验**为准。
 
-| 功能 | admin | teacher | operator | student |
-|:--|:--:|:--:|:--:|:--:|
-| 用户管理（增删改查） | ✅ | ❌ | ❌ | ❌ |
-| 操作日志查看 | ✅ | ❌ | ❌ | ❌ |
-| 设备日志/规则日志查看 | ✅ | ✅ | ❌ | ❌ |
-| 设备节点管理（增删改） | ✅ | ✅ | ❌ | ❌ |
-| 设备节点列表/详情 | ✅ | ✅ | ✅ | ❌ |
-| 组件控制（开/关/自动） | ✅ | ✅ | ✅ | ❌ |
-| 传感器数据查看/上报 | ✅ | ✅ | ✅ | ❌ |
-| 自动规则（增删改/开关） | ✅ | ✅ | ❌ | ❌ |
-| 班级管理 | ✅ | ✅ | ❌ | ❌ |
-| 小组管理 | ✅ | ✅ | ❌ | ❌ |
-| 批量创建学生 | ✅ | ✅ | ❌ | ❌ |
-| 任务管理 | ✅ | ✅ | ❌ | ❌ |
-| 作业批阅 | ✅ | ✅ | ❌ | ❌ |
-| 作物管理 | ✅ | ✅ | ❌ | ❌ |
-| 仪表盘查看 | ✅ | ✅ | ❌ | ❌ |
-| 实验创建/管理 | ✅ | ✅ | ❌ | ❌ |
-| 实验小组分配 | ✅ | ✅ | ❌ | ❌ |
-| 观察记录查看/创建 | ✅ | ✅ | ✅ | ✅ |
-| 设备鉴权令牌管理 | ✅ | ✅ | ✅ | ❌ |
-| 病虫害诊断查看 | ✅ | ✅ | ✅ | ✅（仅本组） |
-| 病虫害诊断删除 | ✅ | ❌ | ❌ | ❌ |
-| MCP 工具调用 | — | — | — | —（设备 token） |
-| MCP 调用日志查看 | ✅ | ✅ | ✅ | ❌ |
-| 通知查看 | ✅ | ✅ | ✅ | ✅ |
-| 学生成长档案 PDF 导出 | ✅ | ✅ | ❌ | ❌ |
-| 班级驾驶舱 | ✅ | ✅ | ❌ | ❌ |
-| 学生端 `/student/me/*` | — | — | — | ✅ |
+| 功能 | admin | teacher | student |
+|:--|:--:|:--:|:--:|
+| 用户管理（增删改查） | ✅ | ❌ | ❌ |
+| 操作日志查看 | ✅ | ❌ | ❌ |
+| 设备日志/规则日志查看 | ✅ | ✅ | ❌ |
+| 设备节点管理（增删改） | ✅ | ✅ | ❌ |
+| 设备节点列表/详情 | ✅ | ✅ | ❌ |
+| 组件控制（开/关/自动） | ✅ | ✅ | ❌ |
+| 传感器数据查看/上报 | ✅ | ✅ | ❌ |
+| 自动规则（增删改/开关） | ✅ | ✅ | ❌ |
+| 班级管理 | ✅ | ✅ | ❌ |
+| 小组管理 | ✅ | ✅ | ❌ |
+| 批量创建学生 | ✅ | ✅ | ❌ |
+| 任务管理 | ✅ | ✅ | ❌ |
+| 作业批阅 | ✅ | ✅ | ❌ |
+| 作物管理 | ✅ | ✅ | ❌ |
+| 仪表盘查看 | ✅ | ✅ | ❌ |
+| 实验创建/管理 | ✅ | ✅ | ❌ |
+| 实验小组分配 | ✅ | ✅ | ❌ |
+| 观察记录查看/创建 | ✅ | ✅ | ✅ |
+| 设备鉴权令牌管理 | ✅ | ✅ | ❌ |
+| 病虫害诊断查看 | ✅ | ✅ | ✅（仅本组） |
+| 病虫害诊断删除 | ✅ | ❌ | ❌ |
+| MCP 工具调用 | — | — | —（设备 token） |
+| MCP 调用日志查看 | ✅ | ✅ | ❌ |
+| 通知查看 | ✅ | ✅ | ✅ |
+| 学生成长档案 PDF 导出 | ✅ | ✅ | ❌ |
+| 班级驾驶舱 | ✅ | ✅ | ❌ |
+| 学生端 `/student/me/*` | — | — | ✅ |
 
 ---
 
@@ -294,17 +298,17 @@ d:\IoT\
 | GET | `/device-nodes/{node_id}/components` | 组件列表 | 已登录 |
 | POST | `/device-nodes/{node_id}/components` | 添加组件 | admin, teacher |
 | PATCH | `/device-nodes/{node_id}/components/{component_id}` | 更新组件 | admin, teacher |
-| POST | `/device-nodes/{node_id}/components/{component_id}/control` | 控制组件 | admin, teacher, operator |
+| POST | `/device-nodes/{node_id}/components/{component_id}/control` | 控制组件 | admin, teacher |
 | GET | `/device-nodes/{node_id}/logs` | 节点日志 | admin, teacher |
 
 ### 传感器数据
 
 | 方法 | 路径 | 说明 | 权限 |
 |:--|:--|:--|:--|
-| POST | `/sensors/data` | 上报数据（触发规则） | admin, teacher, operator |
-| GET | `/sensors/data` | 历史数据（`node_id`, `limit`） | admin, teacher, operator |
-| GET | `/sensors/data/latest` | 最新数据 | admin, teacher, operator |
-| GET | `/sensors/data/echarts` | ECharts 格式 | admin, teacher, operator |
+| POST | `/sensors/data` | 上报数据（触发规则） | admin, teacher |
+| GET | `/sensors/data` | 历史数据（`node_id`, `limit`） | admin, teacher |
+| GET | `/sensors/data/latest` | 最新数据 | admin, teacher |
+| GET | `/sensors/data/echarts` | ECharts 格式 | admin, teacher |
 
 ### 规则
 
@@ -434,11 +438,11 @@ d:\IoT\
 
 | 方法 | 路径 | 说明 | 权限 |
 |:--|:--|:--|:--|
-| GET | `/device-tokens` | 令牌列表（`group_id`, `device_type`, `is_active` 筛选） | admin, teacher, operator |
+| GET | `/device-tokens` | 令牌列表（`group_id`, `device_type`, `is_active` 筛选） | admin, teacher |
 | GET | `/device-tokens/me` | 设备自检（设备 token 鉴权） | 设备 token |
-| POST | `/device-tokens` | 创建令牌（返回明文，仅此一次） | admin, teacher, operator |
-| POST | `/device-tokens/{id}/reset` | 重置令牌字符串 | admin, teacher, operator |
-| POST | `/device-tokens/{id}/revoke` | 吊销令牌 | admin, teacher, operator |
+| POST | `/device-tokens` | 创建令牌（返回明文，仅此一次） | admin, teacher |
+| POST | `/device-tokens/{id}/reset` | 重置令牌字符串 | admin, teacher |
+| POST | `/device-tokens/{id}/revoke` | 吊销令牌 | admin, teacher |
 | DELETE | `/device-tokens/{id}` | 硬删除令牌 | admin |
 
 ### 病虫害诊断（v4.1 P0-NEW-1）
@@ -446,8 +450,8 @@ d:\IoT\
 | 方法 | 路径 | 说明 | 权限 |
 |:--|:--|:--|:--|
 | POST | `/pest-diagnoses/upload` | ESP32-CAM 上传图片诊断（设备 token，仅 esp32cam） | 设备 token |
-| GET | `/pest-diagnoses` | 诊断列表（`group_id`, `diagnosis_result` 筛选） | admin, teacher, operator |
-| GET | `/pest-diagnoses/{id}` | 诊断详情 | admin, teacher, operator |
+| GET | `/pest-diagnoses` | 诊断列表（`group_id`, `diagnosis_result` 筛选） | admin, teacher |
+| GET | `/pest-diagnoses/{id}` | 诊断详情 | admin, teacher |
 | DELETE | `/pest-diagnoses/{id}` | 删除诊断记录 + 图片文件 | admin |
 | GET | `/student/me/pest-diagnoses` | 学生查看本组诊断 | student |
 
@@ -457,7 +461,7 @@ d:\IoT\
 |:--|:--|:--|:--|
 | GET | `/mcp/tools` | MCP 工具清单（6 个工具定义） | 设备 token |
 | POST | `/mcp/tools/call` | 调用 MCP 工具（自动 scope 到设备小组） | 设备 token |
-| GET | `/mcp/logs` | MCP 调用日志（`group_id`, `tool_name` 筛选） | admin, teacher, operator |
+| GET | `/mcp/logs` | MCP 调用日志（`group_id`, `tool_name` 筛选） | admin, teacher |
 
 ### 公开接口
 
@@ -483,7 +487,6 @@ d:\IoT\
     "node_id": 1,
     "air_temp": 26.5,
     "air_humidity": 62.0,
-    "soil_temp": 22.0,
     "soil_humidity": 48.0,
     "light_intensity": 420,
     "soil_ph": 6.5,
@@ -510,7 +513,7 @@ d:\IoT\
 ```ini
 PROJECT_NAME=Smart Greenhouse Admin API
 API_V1_STR=/api/v1
-DATABASE_URL=sqlite:///./data/greenhouse.db
+DATABASE_URL=mysql+pymysql://root:你的密码@localhost:3306/greenhouse?charset=utf8mb4
 JWT_SECRET_KEY=...          # 必填：修改为你自己的密钥
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=1440
@@ -672,7 +675,7 @@ pip install -r requirements.txt
 mosquitto -v
 
 # 4. 启动后端（启动时自动建表和填充种子数据）
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
 ```
 
 ### 10.2 前端（管理后台 + 学生端）
@@ -701,7 +704,6 @@ python scripts/smoke_test_teacher.py
 |:--|:--|:--|:--|
 | `admin` | 见 `.env` 中 `INIT_ADMIN_PASSWORD` | 管理员 | - |
 | `teacher` | `Teacher123456` | 教师 | 王老师 |
-| `operator` | `Operator123456` | 操作员 | 大棚管理员 |
 | `g1s1` | `Student123456` | 学生 | 张小明 |
 | `g1s2` | `Student123456` | 学生 | 李小红 |
 | `g2s1` | `Student123456` | 学生 | 王大力 |
@@ -715,7 +717,39 @@ python scripts/smoke_test_teacher.py
 
 ## 12. 变更记录
 
-### 12.0 v4.1 变更（IoT 硬件整合：设备鉴权 + ESP32-CAM + 小智 AI MCP）
+### 12.0 v4.2 变更（AI 教学助手 + ESP32 硬件模拟器 + MCP 桥接）
+
+#### AI 教学助手（DeepSeek API）
+- ✅ 新增 `ChatSession` / `ChatMessage` / `AiQuotaUsage` 模型（用户隔离、级联删除）
+- ✅ 新增 `ai_service` + `ai` 路由（6 端点：会话 CRUD + 流式对话 + 配额查询）
+- ✅ 双模型切换：`deepseek-chat` / `deepseek-reasoner`（关键词规则匹配）
+- ✅ SSE 流式输出（`POST /ai/chat`，`StreamingResponse(text/event-stream)`）
+- ✅ 配额管理：每日 50 次，独立计数表，删除会话不重置；API 失败自动回退
+- ✅ 空会话清理：API 未配置或配额超限时自动删除空会话
+- ✅ 角色感知系统提示：学生（棚棚小助手，通俗语言 ≤300 字）/ 教师（教学助手，专业简洁 ≤500 字）
+- ✅ 前端：`AiAssistant.vue`（悬浮按钮 + 右侧抽屉）+ `AiMessage.vue`（Markdown 渲染）+ `useAI.ts`
+- ✅ 流式修复：`XMLHttpRequest` + `onprogress` + `processedLength` 独立跟踪（解决 ERR_ABORTED 和重复回答问题）
+- ✅ 会话隔离：`ChatSession.user_id == current_user.id` 强制约束
+
+#### ESP32 硬件模拟器
+- ✅ 重写 `simulate_hardware.py`，适配 `DeviceNode` + `Component` 模型
+- ✅ MQTT 通信：传感器上报、状态心跳、控制命令订阅
+- ✅ 环境联动模型：风扇降温降湿、水泵增湿、补光灯增光
+- ✅ 日间变化：6:00-14:00 渐升，夜间低温低光
+- ✅ 自动加载数据库组件配置
+
+#### MCP 桥接器
+- ✅ 新增 `mcp_bridge.py`：连接小智 AI 官方后台 WebSocket（JSON-RPC 2.0）
+- ✅ 标准 MCP 协议：`initialize` / `tools/list` / `tools/call`
+- ✅ 自动转发到本地 API（`/api/v1/mcp/tools/call`，设备 token 鉴权）
+- ✅ 指数退避重连（5s→60s）
+
+#### 测试与文档
+- ✅ 测试总数从 314 提升到 348（+34：AI 助手 34 项）
+- ✅ API 端点数保持 122 不变（AI 新增 6 端点，无删除）
+- ✅ CLAUDE.md / README.md / CONTEXT.md / CODE_WIKI.md 全面更新
+
+### 12.1 v4.1 变更（IoT 硬件整合：设备鉴权 + ESP32-CAM + 小智 AI MCP）
 
 #### P0-1 通知系统
 - ✅ 新增 `Notification` 模型 + `notification_service` + `notifications` 路由（4 端点）
@@ -740,9 +774,9 @@ python scripts/smoke_test_teacher.py
 - ✅ init_db 种子：第 1 组 3 个设备各一个固定 token
 
 #### P0-NEW-1 ESP32-CAM 视觉节点（病虫害诊断）
-- ✅ 新增 `DiagnosisResult` 枚举（6 分类：番茄/黄瓜 × 健康/早疫晚疫白粉炭疽）
+- ✅ `DiagnosisResult` 枚举（5 分类：番茄/草莓 × 健康/早疫晚疫叶焦病）
 - ✅ 新增 `PestDiagnosis` 模型 + `pest_diagnosis_service` + `pest_diagnoses` 路由（4 端点）
-- ✅ Mock AI：MD5 哈希确定性分类（同图同结果）
+- ✅ ResNet50 真实推理：PyTorch 模型懒加载（`models/pest_model.pth`），自动 CUDA 检测
 - ✅ 上传端点：`POST /pest-diagnoses/upload`（设备 token，仅 esp32cam）
 - ✅ WebSocket 推送 `pest_diagnosis` 事件 + 教师通知
 - ✅ 学生端 `GET /student/me/pest-diagnoses`（仅本组）
@@ -808,7 +842,7 @@ python scripts/smoke_test_teacher.py
 - ✅ 测试总数从 219 提升到 244
 - ✅ README / CONTEXT / CLAUDE 文档全面更新
 
-### 12.1 v3.4 变更（教学平台基础功能）
+### 12.3 v3.4 变更（教学平台基础功能）
 
 #### 新增功能
 - ✅ **学生画像**：教师查看学生行为分析（提交统计/成绩趋势/按时率），学生端个人中心增强统计
@@ -835,7 +869,7 @@ python scripts/smoke_test_teacher.py
 - ✅ Vite 代理新增 `/courseware-files`、`/resource-files`
 - ✅ CSS 新增 `.form-grid-span`、`.selected-row`
 
-### 12.2 v3.3 变更（学生端扩充：图表 + 个人中心 + 响应式）
+### 12.4 v3.3 变更（学生端扩充：图表 + 个人中心 + 响应式）
 
 #### 后端新增
 - ✅ User 模型新增 `avatar_url` 字段（VARCHAR(255)，nullable）
@@ -859,7 +893,7 @@ python scripts/smoke_test_teacher.py
 #### 测试
 - ✅ 测试套件从 206 项扩展到 219 项（新增 13 个学生端接口测试）
 
-### 12.3 v3.2 变更（Phase 1：设备模型重构 + 教学层）
+### 12.5 v3.2 变更（Phase 1：设备模型重构 + 教学层）
 
 #### 设备模型重构
 - ✅ 原 `Device` 模型拆分为 `DeviceNode`（ESP32 板）+ `Component`（传感器/执行器）
@@ -905,7 +939,7 @@ python scripts/smoke_test_teacher.py
 - ✅ 测试套件从原规模扩展到 206 项（含学生角色测试，v3.3 后 219 项）
 - ✅ 新增教师端 E2E 冒烟测试脚本（`scripts/smoke_test_teacher.py`，19 项）
 
-### 12.4 v3.0 变更（项目简化）
+### 12.6 v3.0 变更（项目简化）
 
 - ✅ 删除 `hardware/esp32s3_panel/` 目录（ESP32-S3 触屏面板固件）
 - ✅ 删除 `templates/` 目录（Jinja2 公开展示页）
@@ -919,7 +953,7 @@ python scripts/smoke_test_teacher.py
 - ✅ 前端 401 拦截器调用 `auth.logout()` 清除状态
 - ✅ `AdminLayout.vue` 导航按角色过滤
 
-### 12.6 v2.1 变更（代码审查修复）
+### 12.8 v2.1 变更（代码审查修复）
 
 - ✅ `get_current_user()` 增加 JWT sub 解析异常处理
 - ✅ `get_password_hash()` 增加 bcrypt 72 字节截断保护
@@ -930,12 +964,11 @@ python scripts/smoke_test_teacher.py
 
 ## 13. 待办与后续开发
 
-### 已知遗留
+### 已知遗留（已解决 ✅）
 
-| 优先级 | 事项 | 说明 |
-|:--|:--|:--|
-| 🟡 中 | `simulate_hardware.py` 适配新模型 | 仍引用旧 `/devices` 接口和 `device_id` 字段，需改为 `/device-nodes` + `node_id` |
-| 🟢 低 | 小智 AI 端适配文档 | 可选创建 `docs/xiaozhi-mcp-setup.md` 供 ESP32-S3 开发参考 |
+| 优先级 | 事项 | 说明 | 状态 |
+|:--|:--|:--|:--:|
+| 🟢 低 | 小智 AI 端适配文档 | 可选创建 `docs/xiaozhi-mcp-setup.md` 供 ESP32-S3 开发参考 | ⏳ |
 
 ### v4.1 IoT 硬件整合（大赛作品升级 — 已完成 🎉）
 
@@ -964,4 +997,4 @@ python scripts/smoke_test_teacher.py
 |:--|:--|:--|
 | 🔴 高 | 生产环境安全加固 | 修改默认密码、限制 CORS 来源、启用 HTTPS |
 | 🟡 中 | 传感器阈值告警前移 | 前端告警红色闪烁提示 |
-| 🟢 低 | 数据库迁移到 PostgreSQL | 生产环境替换 SQLite |
+| 🟢 低 | 数据库迁移到 PostgreSQL | 生产环境替换 MySQL（如需） |

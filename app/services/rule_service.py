@@ -156,7 +156,8 @@ def evaluate_rules(db: Session, sensor_data: SensorData) -> int:
 
             if not publish_component_control(
                 component.node_id, component.id, rule.action.value,
-                f"Rule '{rule.name}' triggered"
+                f"Rule '{rule.name}' triggered",
+                component_type=component.type.value,
             ):
                 logger.warning(
                     "Rule '%s' triggered but MQTT control NOT delivered (broker down) for component %s",

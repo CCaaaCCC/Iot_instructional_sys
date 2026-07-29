@@ -108,7 +108,6 @@
         </tbody>
       </table>
       <div v-if="!tasks.length" class="empty-state">
-        <div class="empty-state-icon">📋</div>
         暂无任务数据
       </div>
     </SectionCard>

@@ -17,32 +17,27 @@
 
       <div v-if="loading" class="loading-state">加载中...</div>
       <div v-else-if="!overview" class="empty-state">
-        <div class="empty-state-icon">🏫</div>
         请选择班级查看驾驶舱数据
       </div>
       <template v-else>
         <!-- KPI 卡片 -->
         <div class="grid cards" style="margin-bottom: 18px">
           <div class="stat-card blue">
-            <div class="stat-icon">👥</div>
             <div class="stat-value">{{ overview.total_students }}</div>
             <div class="stat-label">班级人数</div>
             <div class="stat-footnote">{{ overview.total_groups }} 个小组 · {{ overview.total_tasks }} 个任务</div>
           </div>
           <div class="stat-card gold">
-            <div class="stat-icon">📊</div>
             <div class="stat-value">{{ overview.avg_completion_rate }}%</div>
             <div class="stat-label">平均完成率</div>
             <div class="stat-footnote">按时提交率 {{ overview.on_time_ratio }}%</div>
           </div>
           <div class="stat-card green">
-            <div class="stat-icon">⭐</div>
             <div class="stat-value">{{ overview.avg_score !== null ? overview.avg_score + '分' : '-' }}</div>
             <div class="stat-label">平均得分</div>
             <div class="stat-footnote">班级所有已批阅作业</div>
           </div>
           <div class="stat-card red">
-            <div class="stat-icon">📝</div>
             <div class="stat-value">{{ overview.pending_review_count }}</div>
             <div class="stat-label">待批阅</div>
             <div class="stat-footnote">学生已提交未批阅</div>
@@ -52,18 +47,18 @@
         <!-- 图表区域 -->
         <div class="grid two-col" style="margin-bottom: 18px">
           <div>
-            <h4 style="margin-bottom: 10px">📈 各小组完成率</h4>
+            <h4 style="margin-bottom: 10px">各小组完成率</h4>
             <div ref="groupChartRef" class="chart-box"></div>
           </div>
           <div>
-            <h4 style="margin-bottom: 10px">🎯 评分分布</h4>
+            <h4 style="margin-bottom: 10px">评分分布</h4>
             <div ref="scoreChartRef" class="chart-box"></div>
           </div>
         </div>
 
         <!-- 小组排行榜 -->
         <div style="margin-bottom: 18px">
-          <h4 style="margin-bottom: 10px">🏆 小组表现排行</h4>
+          <h4 style="margin-bottom: 10px">小组表现排行</h4>
           <table class="table" v-if="overview.groups.length">
             <thead>
               <tr>
@@ -105,7 +100,7 @@
 
         <!-- 任务完成情况 -->
         <div>
-          <h4 style="margin-bottom: 10px">📋 任务完成情况</h4>
+          <h4 style="margin-bottom: 10px">任务完成情况</h4>
           <table class="table" v-if="overview.tasks.length">
             <thead>
               <tr>

@@ -9,7 +9,7 @@ class DeviceTokenCreate(BaseModel):
     """创建设备令牌请求：教师/管理员为指定小组的某类设备签发 token。"""
 
     group_id: int = Field(..., description="所属小组 ID")
-    device_type: DeviceType = Field(..., description="设备类型: esp32/esp32cam/esp32s3")
+    device_type: DeviceType = Field(..., description="设备类型: esp32/esp32cam/esp32s3/esp32s3_monitor")
     device_name: str = Field(..., min_length=1, max_length=50, description="设备名称")
     node_id: int = Field(..., description="关联的设备节点 ID")
 

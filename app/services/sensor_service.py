@@ -19,10 +19,10 @@ def create_sensor_data(db: Session, data_in: SensorDataCreate) -> SensorData:
         node_id=data_in.node_id,
         air_temp=data_in.air_temp,
         air_humidity=data_in.air_humidity,
-        soil_temp=data_in.soil_temp,
         soil_humidity=data_in.soil_humidity,
         light_intensity=data_in.light_intensity,
         soil_ph=data_in.soil_ph,
+        co2=data_in.co2,
         recorded_at=recorded_at,
     )
     db.add(sensor_data)
@@ -39,10 +39,10 @@ def create_sensor_data(db: Session, data_in: SensorDataCreate) -> SensorData:
         "node_id": sensor_data.node_id,
         "air_temp": sensor_data.air_temp,
         "air_humidity": sensor_data.air_humidity,
-        "soil_temp": sensor_data.soil_temp,
         "soil_humidity": sensor_data.soil_humidity,
         "light_intensity": sensor_data.light_intensity,
         "soil_ph": sensor_data.soil_ph,
+        "co2": sensor_data.co2,
         "recorded_at": sensor_data.recorded_at.isoformat() if sensor_data.recorded_at else None,
     }, node_id=sensor_data.node_id)
     return sensor_data

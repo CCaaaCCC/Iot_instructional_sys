@@ -28,17 +28,3 @@ export async function fetchSensorCharts(params?: {
   const { data } = await http.get<EChartsResponse>('/sensors/data/echarts', { params })
   return data
 }
-
-export async function createSensorData(payload: {
-  node_id: number
-  air_temp?: number | null
-  air_humidity?: number | null
-  soil_temp?: number | null
-  soil_humidity?: number | null
-  light_intensity?: number | null
-  soil_ph?: number | null
-  recorded_at?: string | null
-}) {
-  const { data } = await http.post<SensorData>('/sensors/data', payload)
-  return data
-}

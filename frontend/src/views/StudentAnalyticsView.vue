@@ -42,7 +42,6 @@
         </tbody>
       </table>
       <div v-else-if="!loadingStudents" class="empty-state">
-        <div class="empty-state-icon">👨‍🎓</div>
         暂无学生数据
       </div>
       <div v-else class="loading-state">加载中...</div>
@@ -66,23 +65,19 @@
         <!-- Stat cards -->
         <div class="grid cards" style="margin-bottom:18px">
           <div class="stat-card blue">
-            <div class="stat-icon">📝</div>
             <div class="stat-value">{{ selectedStudent.summary.total_submissions }}</div>
             <div class="stat-label">提交次数</div>
             <div class="stat-footnote">共完成 {{ selectedStudent.summary.completed_tasks }} / {{ selectedStudent.summary.total_tasks }} 个任务</div>
           </div>
           <div class="stat-card green">
-            <div class="stat-icon">⭐</div>
             <div class="stat-value">{{ selectedStudent.summary.avg_score !== null ? selectedStudent.summary.avg_score + '分' : '-' }}</div>
             <div class="stat-label">平均得分</div>
           </div>
           <div class="stat-card gold">
-            <div class="stat-icon">📊</div>
             <div class="stat-value">{{ selectedStudent.summary.completion_rate }}%</div>
             <div class="stat-label">任务完成率</div>
           </div>
           <div class="stat-card green">
-            <div class="stat-icon">✅</div>
             <div class="stat-value">{{ selectedStudent.summary.on_time_ratio }}%</div>
             <div class="stat-label">按时提交率</div>
             <div class="stat-footnote">{{ selectedStudent.summary.on_time_count }} 按时 / {{ selectedStudent.summary.late_count }} 迟交</div>
@@ -91,16 +86,16 @@
 
         <!-- Trend chart -->
         <div v-if="echartsData && echartsData.x.length" style="margin-bottom:18px">
-          <h4 style="margin-bottom:10px">📈 学习趋势</h4>
+          <h4 style="margin-bottom:10px">学习趋势</h4>
           <LineChart :data="echartsData" />
         </div>
 
         <!-- Recent activity -->
         <div>
-          <h4 style="margin-bottom:10px">🕐 近期活动</h4>
+          <h4 style="margin-bottom:10px">近期活动</h4>
           <div v-if="selectedStudent.recent_activity.length">
             <div v-for="(act, idx) in selectedStudent.recent_activity" :key="idx" style="display:flex;gap:12px;padding:8px 0;border-bottom:1px solid var(--line);align-items:flex-start">
-              <span style="font-size:18px">{{ act.type === 'reviewed' ? '📋' : '✏️' }}</span>
+              <span class="badge" :class="act.type === 'reviewed' ? 'success' : 'info'"><span class="badge-dot"></span>{{ act.type === 'reviewed' ? '已批阅' : '已提交' }}</span>
               <div style="flex:1">
                 <strong>{{ act.task_title || '未知任务' }}</strong>
                 <div class="card-subtitle" style="font-size:13px">{{ act.date }} · {{ act.detail }}</div>
@@ -109,7 +104,6 @@
             </div>
           </div>
           <div v-else class="empty-state" style="padding:20px">
-            <div class="empty-state-icon">📭</div>
             暂无活动记录
           </div>
         </div>

@@ -1,7 +1,7 @@
 """AI 助手路由：会话管理 + 流式对话 + 配额查询。
 
 权限：
-- 所有端点仅 admin/teacher/student 可用（operator 无 AI 助手权限）
+- 所有端点仅 admin/teacher/student 可用
 - 会话按 user_id 隔离：用户只能访问自己的会话
 - chat 端点返回 SSE 流式响应
 """
@@ -27,7 +27,7 @@ from app.services import ai_service, log_service
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
-# AI 助手可用角色（operator 无权限）
+# AI 助手可用角色
 _AI_ROLES = (UserRole.admin, UserRole.teacher, UserRole.student)
 
 

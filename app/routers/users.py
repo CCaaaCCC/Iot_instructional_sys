@@ -14,7 +14,7 @@ def list_users(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles(UserRole.admin)),
+    current_user=Depends(require_roles(UserRole.admin, UserRole.teacher)),
 ) -> list[UserOut]:
     return user_service.list_users(db, skip=skip, limit=limit)
 

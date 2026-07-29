@@ -190,10 +190,10 @@ class TestSensorsAPI:
             "node_id": 1,
             "air_temp": 28.5,
             "air_humidity": 65.0,
-            "soil_temp": 22.0,
             "soil_humidity": 48.0,
             "light_intensity": 400.0,
             "soil_ph": 6.8,
+            "co2": 600.0,
             "recorded_at": now,
         }, headers=auth_headers)
         assert resp.status_code == 201
@@ -227,7 +227,7 @@ class TestSensorsAPI:
 
     def test_create_sensor_data_out_of_range_light(self, client, auth_headers):
         resp = client.post("/api/v1/sensors/data", json={
-            "node_id": 1, "light_intensity": 3000.0
+            "node_id": 1, "light_intensity": 200000.0
         }, headers=auth_headers)
         assert resp.status_code == 422
 
@@ -711,14 +711,31 @@ class TestUsersAPI:
         assert resp.status_code == 422
 
     def test_update_user(self, client, auth_headers):
-        resp = client.patch("/api/v1/users/2", json={
-            "role": "operator"
+        # Use an independent user to avoid polluting the teacher account (id=2),
+        # which would break subsequent tests relying on teacher_headers.
+        create = client.post("/api/v1/users", json={
+            "username": "role-update-target",
+            "password": "Target123",
+            "role": "teacher",
+        }, headers=auth_headers)
+        assert create.status_code == 201
+        user_id = create.json()["id"]
+        resp = client.patch(f"/api/v1/users/{user_id}", json={
+            "role": "admin"
         }, headers=auth_headers)
         assert resp.status_code == 200
-        assert resp.json()["role"] == "operator"
+        assert resp.json()["role"] == "admin"
 
     def test_update_user_password(self, client, auth_headers):
-        resp = client.patch("/api/v1/users/2", json={
+        # Use an independent user to avoid changing the teacher account password.
+        create = client.post("/api/v1/users", json={
+            "username": "pwd-update-target",
+            "password": "Target123",
+            "role": "teacher",
+        }, headers=auth_headers)
+        assert create.status_code == 201
+        user_id = create.json()["id"]
+        resp = client.patch(f"/api/v1/users/{user_id}", json={
             "password": "newpassword123"
         }, headers=auth_headers)
         assert resp.status_code == 200
@@ -736,8 +753,9 @@ class TestUsersAPI:
         assert resp.status_code == 403
 
     def test_unauthorized_user_list(self, client, teacher_headers):
+        # Teachers can list users (needed for grading page student name lookup)
         resp = client.get("/api/v1/users", headers=teacher_headers)
-        assert resp.status_code == 403
+        assert resp.status_code == 200
 
 
 class TestDashboardAPI:
@@ -960,10 +978,6 @@ class TestClassroomDashboardAPI:
         resp = client.get("/api/v1/analytics/classrooms/1/overview", headers=student_headers)
         assert resp.status_code == 403
 
-    def test_classroom_overview_operator_forbidden(self, client, operator_headers):
-        resp = client.get("/api/v1/analytics/classrooms/1/overview", headers=operator_headers)
-        assert resp.status_code == 403
-
     def test_classroom_overview_unauthorized(self, client):
         resp = client.get("/api/v1/analytics/classrooms/1/overview")
         assert resp.status_code == 401
@@ -1171,24 +1185,6 @@ class TestDeviceTokenAPI:
         assert resp.status_code == 201
         TestDeviceTokenAPI._s3_token_id = resp.json()["id"]
 
-    def test_create_token_operator_allowed(self, client, operator_headers):
-        """操作员可签发令牌。"""
-        # 用 esp32cam（若已被 cam 测试占用则改用其他类型）
-        # 注意：esp32cam 已被前面的测试创建过（group_id=1），这里尝试 esp32 类型也已占用
-        # 改为创建一个新组测试 — 但 sample_data 只有一个组，所以这里预期 400（重复）
-        # 实际上 operator 权限测试应验证 201 或 400（取决于是否重复），重点是不返回 403
-        payload = {
-            "group_id": 1,
-            "device_type": "esp32",
-            "device_name": "Operator Attempt",
-            "node_id": 1,
-        }
-        resp = client.post(
-            "/api/v1/device-tokens", json=payload, headers=operator_headers
-        )
-        # operator 不应被 403 拒绝（400 重复属于业务错误，权限通过）
-        assert resp.status_code in (201, 400)
-
     def test_create_token_student_forbidden(self, client, student_headers):
         """学生无权签发令牌（403）。"""
         payload = {
@@ -1312,10 +1308,9 @@ class TestPestDiagnosisAPI:
                 TestPestDiagnosisAPI._esp32_token = resp_reset.json()["token"]
 
     def test_upload_diagnosis_success(self, client):
-        """esp32cam 设备上传图片，返回 201 + 诊断结果（6 分类之一）。"""
+        """esp32cam 设备上传图片，返回 201 + 诊断结果（5 分类之一）。"""
         token = TestPestDiagnosisAPI._cam_token
         assert token is not None, "前置：cam 令牌未创建"
-        # 构造一个小的 JPEG 假图片（字节即可，mock AI 只看哈希）
         fake_image = b"\xff\xd8\xff\xe0test_image_data_for_pest_diagnosis_001\x00" * 10
         resp = client.post(
             "/api/v1/pest-diagnoses/upload",
@@ -1328,9 +1323,8 @@ class TestPestDiagnosisAPI:
             "tomato_healthy",
             "tomato_early_blight",
             "tomato_late_blight",
-            "cucumber_healthy",
-            "cucumber_powdery_mildew",
-            "cucumber_anthracnose",
+            "strawberry_healthy",
+            "strawberry_leaf_scorch",
         ]
         assert 0.0 <= data["confidence"] <= 1.0
         assert "image_url" in data
@@ -1339,7 +1333,7 @@ class TestPestDiagnosisAPI:
         TestPestDiagnosisAPI._diagnosis_id = data["id"]
 
     def test_upload_diagnosis_deterministic(self, client):
-        """同一张图片两次上传应返回相同诊断结果（mock AI 确定性）。"""
+        """同一张图片两次上传应返回相同诊断结果（mock 确定性）。"""
         token = TestPestDiagnosisAPI._cam_token
         assert token is not None
         fake_image = b"deterministic_test_image_002" * 20
@@ -1821,11 +1815,6 @@ class TestMcpAPI:
         resp = client.get("/api/v1/mcp/logs", headers=teacher_headers)
         assert resp.status_code == 200
 
-    def test_logs_operator_allowed(self, client, operator_headers):
-        """操作员可查询 MCP 日志（设备管理相关，与 pest-diagnoses 一致）。"""
-        resp = client.get("/api/v1/mcp/logs", headers=operator_headers)
-        assert resp.status_code == 200
-
     def test_logs_student_forbidden(self, client, student_headers):
         """学生不能查询 MCP 日志（403）。"""
         resp = client.get("/api/v1/mcp/logs", headers=student_headers)
@@ -1864,3 +1853,256 @@ class TestMcpAPI:
         from app.services import mcp_service
         cleaned = mcp_service.cleanup_expired_mcp_logs(db)
         assert cleaned >= 1
+
+    def test_call_tool_wrong_device_type(self, client, db):
+        """非 esp32s3 设备（如 esp32）调用 MCP 工具返回 403。"""
+        from app.models.device_token import DeviceToken
+        from app.models.enums import DeviceType
+
+        token = DeviceToken(
+            group_id=1,
+            node_id=1,
+            device_type=DeviceType.esp32,
+            device_name="ESP32-for-MCP-perm-test",
+            token="test-esp32-mcp-perm-token-001",
+            is_active=True,
+        )
+        db.add(token)
+        db.commit()
+        resp = client.post(
+            "/api/v1/mcp/tools/call",
+            headers={"Authorization": f"Bearer {token.token}"},
+            json={"tool_name": "get_latest_sensor_data", "arguments": {}},
+        )
+        assert resp.status_code == 403
+
+
+class TestCoursewareAPI:
+    """课件库 API 测试。"""
+
+    _courseware_id: int | None = None
+
+    def test_upload_courseware(self, client, teacher_headers):
+        pdf_content = b"%PDF-1.4\n%test pdf content for courseware upload\n"
+        resp = client.post(
+            "/api/v1/courseware",
+            data={
+                "title": "Test Courseware",
+                "description": "A test PDF courseware",
+                "file_type": "pdf",
+                "subject": "science",
+                "grade_level": "grade_5",
+                "tags": "test,pdf",
+                "is_public": "false",
+            },
+            files={"file": ("test.pdf", pdf_content, "application/pdf")},
+            headers=teacher_headers,
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["title"] == "Test Courseware"
+        assert data["file_type"] == "pdf"
+        assert data["subject"] == "science"
+        assert data["owner_id"] == 2  # teacher id
+        assert data["file_url"].startswith("/courseware-files/")
+        assert data["is_public"] is False
+        TestCoursewareAPI._courseware_id = data["id"]
+
+    def test_list_my_courseware(self, client, teacher_headers):
+        resp = client.get("/api/v1/courseware/my", headers=teacher_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        cid = TestCoursewareAPI._courseware_id
+        assert cid is not None
+        assert any(c["id"] == cid for c in data)
+
+    def test_list_public_courseware(self, client, teacher_headers):
+        # 当前课件为私密，公共库不应包含
+        resp = client.get("/api/v1/courseware/public", headers=teacher_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        cid = TestCoursewareAPI._courseware_id
+        assert cid is not None
+        assert not any(c["id"] == cid for c in data)
+
+    def test_get_courseware(self, client, teacher_headers):
+        cid = TestCoursewareAPI._courseware_id
+        assert cid is not None
+        resp = client.get(f"/api/v1/courseware/{cid}", headers=teacher_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["id"] == cid
+        assert data["title"] == "Test Courseware"
+        assert "owner_name" in data
+
+    def test_toggle_public(self, client, teacher_headers):
+        cid = TestCoursewareAPI._courseware_id
+        assert cid is not None
+        resp_before = client.get(f"/api/v1/courseware/{cid}", headers=teacher_headers)
+        before_state = resp_before.json()["is_public"]
+        resp = client.patch(
+            f"/api/v1/courseware/{cid}/toggle-public", headers=teacher_headers
+        )
+        assert resp.status_code == 200
+        assert resp.json()["is_public"] is (not before_state)
+
+    def test_delete_courseware(self, client, teacher_headers):
+        cid = TestCoursewareAPI._courseware_id
+        assert cid is not None
+        resp = client.delete(f"/api/v1/courseware/{cid}", headers=teacher_headers)
+        assert resp.status_code == 204
+        resp_get = client.get(f"/api/v1/courseware/{cid}", headers=teacher_headers)
+        assert resp_get.status_code == 404
+
+    def test_upload_invalid_file_type(self, client, teacher_headers):
+        resp = client.post(
+            "/api/v1/courseware",
+            data={
+                "title": "Invalid Type",
+                "file_type": "jpg",
+                "subject": "science",
+            },
+            files={"file": ("test.jpg", b"fake image data", "image/jpeg")},
+            headers=teacher_headers,
+        )
+        assert resp.status_code == 400
+
+
+class TestTeachingResourcesAPI:
+    """教学资源 API 测试。"""
+
+    _resource_id: int | None = None
+
+    def test_create_resource(self, client, teacher_headers):
+        pdf_content = b"%PDF-1.4\n%test pdf content for teaching resource\n"
+        resp = client.post(
+            "/api/v1/resources",
+            data={
+                "title": "Test Resource",
+                "description": "A test teaching resource",
+                "resource_type": "pdf",
+                "subject": "science",
+                "classroom_id": "1",
+                "group_id": "1",
+                "is_published": "true",
+            },
+            files={"file": ("resource.pdf", pdf_content, "application/pdf")},
+            headers=teacher_headers,
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["title"] == "Test Resource"
+        assert data["resource_type"] == "pdf"
+        assert data["publisher_id"] == 2  # teacher id
+        assert data["file_url"].startswith("/resource-files/")
+        assert data["is_published"] is True
+        TestTeachingResourcesAPI._resource_id = data["id"]
+
+    def test_list_resources(self, client, teacher_headers):
+        resp = client.get("/api/v1/resources", headers=teacher_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        rid = TestTeachingResourcesAPI._resource_id
+        assert rid is not None
+        assert any(r["id"] == rid for r in data)
+
+    def test_toggle_publish(self, client, teacher_headers):
+        rid = TestTeachingResourcesAPI._resource_id
+        assert rid is not None
+        # 撤回
+        resp1 = client.patch(
+            f"/api/v1/resources/{rid}/publish", headers=teacher_headers
+        )
+        assert resp1.status_code == 200
+        assert resp1.json()["is_published"] is False
+        # 重新发布
+        resp2 = client.patch(
+            f"/api/v1/resources/{rid}/publish", headers=teacher_headers
+        )
+        assert resp2.status_code == 200
+        assert resp2.json()["is_published"] is True
+
+    def test_student_view_resources(self, client, student_headers):
+        resp = client.get("/api/v1/student/me/resources", headers=student_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        rid = TestTeachingResourcesAPI._resource_id
+        assert rid is not None
+        assert any(r["id"] == rid for r in data)
+
+    def test_student_cannot_view_unpublished(
+        self, client, teacher_headers, student_headers
+    ):
+        rid = TestTeachingResourcesAPI._resource_id
+        assert rid is not None
+        # 撤回
+        resp_toggle = client.patch(
+            f"/api/v1/resources/{rid}/publish", headers=teacher_headers
+        )
+        assert resp_toggle.json()["is_published"] is False
+        # 学生查看，不应包含已撤回资源
+        resp = client.get("/api/v1/student/me/resources", headers=student_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert not any(r["id"] == rid for r in data)
+
+    def test_delete_resource(self, client, teacher_headers):
+        rid = TestTeachingResourcesAPI._resource_id
+        assert rid is not None
+        resp = client.delete(f"/api/v1/resources/{rid}", headers=teacher_headers)
+        assert resp.status_code == 204
+        resp_get = client.get(f"/api/v1/resources/{rid}", headers=teacher_headers)
+        assert resp_get.status_code == 404
+
+
+class TestAnalyticsAPI:
+    """学习分析 API 测试。"""
+
+    def test_get_student_analytics(self, client, teacher_headers):
+        # student id=4 in sample_data
+        resp = client.get("/api/v1/analytics/students/4", headers=teacher_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "summary" in data
+        summary = data["summary"]
+        assert summary["student_id"] == 4
+        assert "total_submissions" in summary
+        assert "completion_rate" in summary
+        assert "submission_frequency" in data
+        assert "score_trend" in data
+        assert "recent_activity" in data
+
+    def test_get_class_analytics(self, client, teacher_headers):
+        # classroom id=1 in sample_data
+        resp = client.get(
+            "/api/v1/analytics/classrooms/1/overview", headers=teacher_headers
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["classroom_id"] == 1
+        assert "total_students" in data
+        assert "total_groups" in data
+        assert "groups" in data
+        assert "tasks" in data
+        assert "score_distribution" in data
+
+
+class TestExportsAPI:
+    """学生成长 PDF 导出 API 测试。"""
+
+    def test_export_student_pdf(self, client, teacher_headers):
+        resp = client.get(
+            "/api/v1/exports/students/4/growth-pdf", headers=teacher_headers
+        )
+        assert resp.status_code == 200
+        assert "application/pdf" in resp.headers["content-type"]
+        # PDF 应有内容
+        assert len(resp.content) > 0
+        # Content-Disposition 应包含文件名
+        assert "content-disposition" in resp.headers
+        assert "growth_archive" in resp.headers["content-disposition"]

@@ -44,7 +44,6 @@
       </template>
 
       <div v-if="!filteredClassrooms.length" class="empty-state">
-        <div class="empty-state-icon">🏫</div>
         暂无班级，请先创建
       </div>
 

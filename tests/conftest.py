@@ -27,6 +27,26 @@ def _reset_rate_limit():
     _attempts.clear()
 
 
+@pytest.fixture(autouse=True)
+def _mock_ai_classify(monkeypatch):
+    """测试环境无 PyTorch/模型文件，mock ai_classify 为确定性哈希分类。"""
+    import hashlib
+    from app.models.enums import DiagnosisResult
+
+    _ALL_RESULTS = list(DiagnosisResult)
+
+    def _mock_classify(image_data: bytes) -> tuple[DiagnosisResult, float]:
+        digest = hashlib.md5(image_data).hexdigest()
+        idx = int(digest[:8], 16) % len(_ALL_RESULTS)
+        result = _ALL_RESULTS[idx]
+        conf_raw = int(digest[8:12], 16) % 2700
+        confidence = round(0.72 + conf_raw / 10000, 4)
+        return result, confidence
+
+    from app.services import pest_diagnosis_service
+    monkeypatch.setattr(pest_diagnosis_service, "ai_classify", _mock_classify)
+
+
 @pytest.fixture(scope="session")
 def test_engine():
     engine = create_engine(
@@ -88,11 +108,6 @@ def teacher_token():
 
 
 @pytest.fixture
-def operator_token():
-    return create_access_token("3")
-
-
-@pytest.fixture
 def student_token():
     return create_access_token("4")
 
@@ -105,11 +120,6 @@ def auth_headers(admin_token):
 @pytest.fixture
 def teacher_headers(teacher_token):
     return {"Authorization": f"Bearer {teacher_token}"}
-
-
-@pytest.fixture
-def operator_headers(operator_token):
-    return {"Authorization": f"Bearer {operator_token}"}
 
 
 @pytest.fixture
@@ -157,15 +167,11 @@ def sample_data(test_session_factory):
         id=2, username="teacher", hashed_password=get_password_hash("Teacher123456"),
         role=UserRole.teacher, is_active=True
     )
-    operator = User(
-        id=3, username="operator", hashed_password=get_password_hash("Operator123456"),
-        role=UserRole.operator, is_active=True
-    )
     inactive = User(
         id=6, username="inactive", hashed_password=get_password_hash("Inactive123"),
         role=UserRole.teacher, is_active=False
     )
-    db.add_all([admin, teacher, operator, inactive])
+    db.add_all([admin, teacher, inactive])
 
     node = DeviceNode(
         id=1, name="Node-1", location="Greenhouse A", online=True,
@@ -226,7 +232,7 @@ def sample_data(test_session_factory):
 
     sensor_data = SensorData(
         id=1, node_id=1, air_temp=25.0, air_humidity=60.0,
-        soil_temp=20.0, soil_humidity=45.0, light_intensity=350.0, soil_ph=6.5,
+        soil_humidity=45.0, light_intensity=350.0, soil_ph=6.5, co2=600.0,
         recorded_at=datetime.now()
     )
     db.add(sensor_data)

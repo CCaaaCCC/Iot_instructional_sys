@@ -1,5 +1,5 @@
 <template>
-  <!-- 悬浮按钮（operator 不渲染） -->
+  <!-- 悬浮按钮（登录后渲染） -->
   <button
     v-if="!isOpen && canUseAI"
     class="ai-fab"
@@ -124,7 +124,7 @@ const {
 
 const messagesContainer = ref<HTMLElement | null>(null)
 
-const canUseAI = computed(() => auth.user?.role !== 'operator')
+const canUseAI = computed(() => !!auth.user)
 
 function onSessionChange(e: Event) {
   const val = (e.target as HTMLSelectElement).value

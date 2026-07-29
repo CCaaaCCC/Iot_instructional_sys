@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db, require_roles
 from app.core.device_auth import DeviceContext, get_device_context
-from app.models.enums import UserRole
+from app.models.enums import DeviceType, UserRole
 from app.schemas.mcp import (
     McpCallLogListOut,
     McpToolCallRequest,
@@ -52,6 +52,11 @@ def call_tool(
     核心安全：所有工具自动 scope 到 device.group_id，不接受外部传入 group_id。
     返回结构化结果 {success, result, error, duration_ms}。
     """
+    if device.device_type != DeviceType.esp32s3.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only esp32s3 devices can call MCP tools",
+        )
     result = mcp_service.call_tool(
         db,
         device=device,
@@ -73,9 +78,9 @@ def list_logs(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles(UserRole.admin, UserRole.teacher, UserRole.operator)),
+    current_user=Depends(require_roles(UserRole.admin, UserRole.teacher)),
 ) -> list[McpCallLogListOut]:
-    """查询 MCP 调用日志（admin + teacher + operator，教师可读所有班级）。
+    """查询 MCP 调用日志（admin + teacher，教师可读所有班级）。
 
     支持按 group_id 和 tool_name 过滤，按时间倒序返回。
     """

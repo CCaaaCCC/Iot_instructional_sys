@@ -87,9 +87,55 @@ function render() {
   const palette = getChartColors()
   const baseOptions = getChartOptions()
 
+  // 归一化处理：每个 series 除以自己的 max * 100，避免量级差异压扁曲线
+  const seriesMax = props.data.series.map((s) => {
+    const validValues = (s.data.filter((v) => v !== null && v !== undefined && v !== 0) as number[])
+    return validValues.length > 0 ? Math.max(...validValues) : 1
+  })
+
+  const normalizedSeries = props.data.series.map((s, i) => ({
+    name: s.name,
+    type: 'line' as const,
+    smooth: true,
+    showSymbol: false,
+    data: s.data.map((v) => (v === null || v === undefined ? null : (v / seriesMax[i]) * 100)),
+    lineStyle: {
+      width: 2.5,
+      color: palette[i % palette.length],
+    },
+    areaStyle: {
+      opacity: 0.08,
+      color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+        { offset: 0, color: palette[i % palette.length] },
+        { offset: 1, color: 'transparent' },
+      ]),
+    },
+    emphasis: {
+      lineStyle: {
+        width: 3,
+      },
+    },
+    itemStyle: {
+      color: palette[i % palette.length],
+    },
+  }))
+
   chart.setOption({
     backgroundColor: 'transparent',
     ...baseOptions,
+    tooltip: {
+      ...baseOptions.tooltip,
+      trigger: 'axis',
+      formatter: (params: any) => {
+        if (!Array.isArray(params) || params.length === 0) return ''
+        let result = params[0].axisValue + '<br/>'
+        params.forEach((p: any) => {
+          const originalValue = props.data?.series[p.seriesIndex]?.data[p.dataIndex]
+          result += `${p.marker} ${p.seriesName}: ${originalValue ?? '-'}<br/>`
+        })
+        return result
+      },
+    },
     grid: {
       left: 44,
       right: 20,
@@ -104,33 +150,14 @@ function render() {
     yAxis: {
       ...baseOptions.yAxis,
       type: 'value',
+      min: 0,
+      max: 100,
+      axisLabel: {
+        ...baseOptions.yAxis.axisLabel,
+        formatter: '{value}%',
+      },
     },
-    series: props.data.series.map((item, index) => ({
-      name: item.name,
-      type: 'line',
-      smooth: true,
-      showSymbol: false,
-      data: item.data,
-      lineStyle: {
-        width: 2.5,
-        color: palette[index % palette.length],
-      },
-      areaStyle: {
-        opacity: 0.08,
-        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: palette[index % palette.length] },
-          { offset: 1, color: 'transparent' },
-        ]),
-      },
-      emphasis: {
-        lineStyle: {
-          width: 3,
-        },
-      },
-      itemStyle: {
-        color: palette[index % palette.length],
-      },
-    })),
+    series: normalizedSeries,
   }, true)
 }
 

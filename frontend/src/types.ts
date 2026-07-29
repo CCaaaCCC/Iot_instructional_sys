@@ -1,21 +1,20 @@
-export type UserRole = 'admin' | 'teacher' | 'operator' | 'student'
+export type UserRole = 'admin' | 'teacher' | 'student'
 export type ComponentType = 'fan' | 'pump' | 'light' | 'sensor'
 export type ComponentStatus = 'on' | 'off' | 'auto'
 export type RuleOperator = '>' | '>=' | '<' | '<='
-export type SensorMetric = 'air_temp' | 'air_humidity' | 'soil_temp' | 'soil_humidity' | 'light_intensity' | 'soil_ph'
+export type SensorMetric = 'air_temp' | 'air_humidity' | 'soil_humidity' | 'light_intensity' | 'soil_ph' | 'co2'
 export type TaskStatus = 'pending' | 'in_progress' | 'done'
 export type CourseSubject = 'labor' | 'science'
 export type TaskType = 'observation' | 'experiment' | 'maintenance'
 export type ExperimentStatus = 'ongoing' | 'completed'
 export type ExperimentRole = 'control' | 'experimental'
-export type DeviceType = 'esp32' | 'esp32cam' | 'esp32s3'
+export type DeviceType = 'esp32' | 'esp32cam' | 'esp32s3' | 'esp32s3_monitor'
 export type DiagnosisResult =
   | 'tomato_healthy'
   | 'tomato_early_blight'
   | 'tomato_late_blight'
-  | 'cucumber_healthy'
-  | 'cucumber_powdery_mildew'
-  | 'cucumber_anthracnose'
+  | 'strawberry_healthy'
+  | 'strawberry_leaf_scorch'
 
 export interface User {
   id: number
@@ -55,10 +54,10 @@ export interface SensorData {
   node_id: number
   air_temp: number | null
   air_humidity: number | null
-  soil_temp: number | null
   soil_humidity: number | null
   light_intensity: number | null
   soil_ph: number | null
+  co2: number | null
   recorded_at: string
   created_at: string
 }

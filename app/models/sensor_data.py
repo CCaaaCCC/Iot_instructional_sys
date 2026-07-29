@@ -16,10 +16,10 @@ class SensorData(Base):
     node_id: Mapped[int] = mapped_column(ForeignKey("device_nodes.id"), nullable=False)
     air_temp: Mapped[float | None] = mapped_column(Float, nullable=True)
     air_humidity: Mapped[float | None] = mapped_column(Float, nullable=True)
-    soil_temp: Mapped[float | None] = mapped_column(Float, nullable=True)
     soil_humidity: Mapped[float | None] = mapped_column(Float, nullable=True)
     light_intensity: Mapped[float | None] = mapped_column(Float, nullable=True)
     soil_ph: Mapped[float | None] = mapped_column(Float, nullable=True)
+    co2: Mapped[float | None] = mapped_column(Float, nullable=True)
     recorded_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

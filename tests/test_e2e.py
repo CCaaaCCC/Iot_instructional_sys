@@ -32,28 +32,7 @@ class TestE2EAuthFlow:
         assert resp.status_code == 200
 
         resp = client.get("/api/v1/users", headers=headers)
-        assert resp.status_code == 403
-
-    def test_operator_login_limited_access(self, client):
-        resp = client.post("/api/v1/auth/login", data={
-            "username": "operator", "password": "Operator123456"
-        })
         assert resp.status_code == 200
-        token = resp.json()["access_token"]
-        headers = {"Authorization": f"Bearer {token}"}
-
-        resp = client.get("/api/v1/device-nodes", headers=headers)
-        assert resp.status_code == 200
-
-        resp = client.post("/api/v1/device-nodes/1/components/1/control", json={
-            "action": "on"
-        }, headers=headers)
-        assert resp.status_code == 200
-
-        resp = client.post("/api/v1/device-nodes", json={
-            "name": "OpForbiddenNode", "location": "Zone"
-        }, headers=headers)
-        assert resp.status_code == 403
 
     def test_student_login_can_submit(self, client):
         resp = client.post("/api/v1/auth/login", data={
@@ -131,10 +110,10 @@ class TestE2ESensorDataFlow:
             "node_id": 1,
             "air_temp": 35.0,
             "air_humidity": 40.0,
-            "soil_temp": 25.0,
             "soil_humidity": 30.0,
             "light_intensity": 500.0,
             "soil_ph": 6.5,
+            "co2": 700.0,
         }, headers=auth_headers)
         assert resp.status_code == 201
         sensor_data = resp.json()
@@ -158,10 +137,10 @@ class TestE2ESensorDataFlow:
                 "node_id": 1,
                 "air_temp": 25.0 + i,
                 "air_humidity": 60.0 - i,
-                "soil_temp": 20.0 + i * 0.5,
                 "soil_humidity": 50.0 - i * 2,
                 "light_intensity": 300.0 + i * 10,
                 "soil_ph": 6.5 + i * 0.1,
+                "co2": 600.0 + i * 30,
                 "recorded_at": (now - timedelta(hours=i)).isoformat(),
             }, headers=auth_headers)
             assert resp.status_code == 201
@@ -337,21 +316,21 @@ class TestE2EUserManagement:
         resp = client.post("/api/v1/users", json={
             "username": "e2e_user",
             "password": "e2epass1234",
-            "role": "operator",
+            "role": "teacher",
             "is_active": True,
         }, headers=auth_headers)
         assert resp.status_code == 201
         user = resp.json()
         assert user["username"] == "e2e_user"
-        assert user["role"] == "operator"
+        assert user["role"] == "teacher"
         user_id = user["id"]
 
         resp = client.patch(f"/api/v1/users/{user_id}", json={
-            "role": "teacher",
+            "role": "admin",
             "is_active": False,
         }, headers=auth_headers)
         assert resp.status_code == 200
-        assert resp.json()["role"] == "teacher"
+        assert resp.json()["role"] == "admin"
         assert resp.json()["is_active"] is False
 
         resp = client.post("/api/v1/auth/login", data={
@@ -382,10 +361,10 @@ class TestE2EBoundaryConditions:
                 "node_id": 1,
                 "air_temp": 20.0 + i,
                 "air_humidity": 50.0 + i,
-                "soil_temp": 15.0 + i * 0.3,
                 "soil_humidity": 30.0 + i,
                 "light_intensity": 100.0 + i * 50,
                 "soil_ph": 5.5 + i * 0.1,
+                "co2": 500.0 + i * 40,
             }, headers=auth_headers)
             assert resp.status_code == 201
 
@@ -404,10 +383,10 @@ class TestE2EBoundaryConditions:
             "node_id": 1,
             "air_temp": 80.0,
             "air_humidity": 100.0,
-            "soil_temp": 60.0,
             "soil_humidity": 100.0,
             "light_intensity": 2000.0,
             "soil_ph": 14.0,
+            "co2": 5000.0,
         }, headers=auth_headers)
         assert resp.status_code == 201
 
@@ -416,10 +395,10 @@ class TestE2EBoundaryConditions:
             "node_id": 1,
             "air_temp": -50.0,
             "air_humidity": 0.0,
-            "soil_temp": -30.0,
             "soil_humidity": 0.0,
             "light_intensity": 0.0,
             "soil_ph": 0.0,
+            "co2": 0.0,
         }, headers=auth_headers)
         assert resp.status_code == 201
 

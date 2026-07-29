@@ -24,10 +24,10 @@
           <select v-model="form.variable_metric" class="select" required>
             <option value="air_temp">空气温度</option>
             <option value="air_humidity">空气湿度</option>
-            <option value="soil_temp">土壤温度</option>
             <option value="soil_humidity">土壤湿度</option>
             <option value="light_intensity">光照强度</option>
             <option value="soil_ph">土壤 pH</option>
+            <option value="co2">CO₂浓度</option>
           </select>
         </label>
         <label>
@@ -107,7 +107,6 @@
         </tbody>
       </table>
       <div v-if="!experiments.length" class="empty-state">
-        <div class="empty-state-icon">🧪</div>
         暂无实验数据
       </div>
     </SectionCard>
@@ -263,10 +262,10 @@ const detail = reactive({
 const metricLabels: Record<SensorMetric, string> = {
   air_temp: '空气温度',
   air_humidity: '空气湿度',
-  soil_temp: '土壤温度',
   soil_humidity: '土壤湿度',
   light_intensity: '光照强度',
   soil_ph: '土壤 pH',
+  co2: 'CO₂浓度',
 }
 function metricLabel(m: SensorMetric) { return metricLabels[m] ?? m }
 

@@ -10,7 +10,7 @@ class Settings(BaseSettings):
 
     PROJECT_NAME: str = "Smart Greenhouse Admin API"
     API_V1_STR: str = "/api/v1"
-    DATABASE_URL: str = "sqlite:///./data/greenhouse.db"
+    DATABASE_URL: str = "mysql+pymysql://root:CHANGE_ME@localhost:3306/greenhouse?charset=utf8mb4"
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     AI_CONTEXT_WINDOW: int = 10  # 注入历史消息条数（偶数=完整轮次）
     AI_SESSION_TITLE_MAXLEN: int = 30  # 会话标题自动截断长度
     AI_REQUEST_TIMEOUT: int = 60  # DeepSeek API 请求超时秒数
+    # MCP Bridge (小智 AI)
+    MCP_ENDPOINT: str = ""  # 小智 MCP WebSocket 接入点，空=未配置
+    DEVICE_TOKEN: str = ""  # esp32s3 设备 token，用于本地 API 鉴权
+    LOCAL_API_BASE: str = "http://127.0.0.1:8001"  # 本地后端地址
 
 
 settings = Settings()

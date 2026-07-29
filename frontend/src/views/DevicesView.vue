@@ -43,7 +43,6 @@
       </template>
 
       <div v-if="!nodes.length" class="empty-state">
-        <div class="empty-state-icon">🔌</div>
         暂无设备节点
       </div>
 
@@ -56,7 +55,7 @@
               </span>
               <strong>{{ node.name }}</strong>
               <span class="node-meta">ID: {{ node.id }}</span>
-              <span v-if="node.location" class="node-meta">📍 {{ node.location }}</span>
+              <span v-if="node.location" class="node-meta">{{ node.location }}</span>
               <span v-if="node.last_reported_at" class="node-meta">最近上报：{{ formatTime(node.last_reported_at) }}</span>
             </div>
             <div class="node-actions">
@@ -141,10 +140,10 @@
           <select v-model="componentForm.metric" class="select">
             <option value="air_temp">air_temp - 空气温度</option>
             <option value="air_humidity">air_humidity - 空气湿度</option>
-            <option value="soil_temp">soil_temp - 土壤温度</option>
             <option value="soil_humidity">soil_humidity - 土壤湿度</option>
             <option value="light_intensity">light_intensity - 光照强度</option>
             <option value="soil_ph">soil_ph - 土壤pH</option>
+            <option value="co2">co2 - CO₂浓度</option>
           </select>
         </label>
         <div style="display:flex;align-items:flex-end;gap:8px">
@@ -190,6 +189,7 @@
             <option value="esp32">esp32 - 主控节点</option>
             <option value="esp32cam">esp32cam - 视觉节点</option>
             <option value="esp32s3">esp32s3 - 小智AI节点</option>
+            <option value="esp32s3_monitor">esp32s3_monitor - 上位机监测节点</option>
           </select>
         </label>
         <label>
@@ -452,6 +452,7 @@ function deviceTypeLabel(type: DeviceType) {
     esp32: 'ESP32 主控',
     esp32cam: 'ESP32-CAM 视觉',
     esp32s3: 'ESP32-S3 小智',
+    esp32s3_monitor: 'ESP32-S3 上位机',
   }
   return map[type]
 }

@@ -145,6 +145,8 @@ def verify_token(db: Session, token_str: str) -> DeviceToken | None:
     if not token or not token.is_active:
         return None
     token.last_used_at = datetime.now()
-    db.commit()
+    # 使用 flush 而非 commit：将 last_used_at 写入当前事务，
+    # 由调用方（上传/控制等操作）统一 commit，失败时整体回滚
+    db.flush()
     db.refresh(token)
     return token
