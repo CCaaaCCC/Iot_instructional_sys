@@ -22,9 +22,12 @@
 
       <div v-if="error" class="msg-error">{{ error }}</div>
 
-      <div v-if="!diagnoses.length" class="empty-state">
-        暂无诊断记录
-      </div>
+      <EmptyState
+        v-if="!diagnoses.length"
+        icon="camera"
+        title="暂无诊断记录"
+        desc="ESP32-CAM 上传植物照片后，诊断结果会实时出现在这里"
+      />
 
       <table v-else class="table">
         <thead>
@@ -53,7 +56,22 @@
                 <span class="badge-dot"></span> {{ resultLabel(d.diagnosis_result) }}
               </span>
             </td>
-            <td>{{ (d.confidence * 100).toFixed(1) }}%</td>
+            <td>
+              <div class="confidence-cell">
+                <svg class="confidence-ring" width="34" height="34" viewBox="0 0 36 36">
+                  <circle class="ring-track" cx="18" cy="18" r="15" />
+                  <circle
+                    class="ring-value"
+                    :class="isHealthy(d.diagnosis_result) ? 'healthy' : 'disease'"
+                    cx="18"
+                    cy="18"
+                    r="15"
+                    :stroke-dasharray="`${(d.confidence * 94.25).toFixed(1)} 94.25`"
+                  />
+                </svg>
+                <span>{{ (d.confidence * 100).toFixed(0) }}%</span>
+              </div>
+            </td>
             <td>{{ d.group_name || '#' + d.group_id }}</td>
             <td class="suggestion-cell">{{ d.suggestion || '-' }}</td>
             <td>{{ formatTime(d.created_at) }}</td>
@@ -75,10 +93,14 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch, computed } from 'vue'
 import SectionCard from '@/components/SectionCard.vue'
+import EmptyState from '@/components/EmptyState.vue'
+import { useConfirm } from '@/composables/useConfirm'
+import { useToast } from '@/composables/useToast'
 import { fetchPestDiagnoses, deletePestDiagnosis } from '@/api/pest_diagnosis'
 import { fetchGroups } from '@/api/groups'
 import { useAuthStore } from '@/stores/auth'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { diagnosisResultLabels } from '@/utils/labels'
 import type { DiagnosisResult, Group, PestDiagnosisListItem } from '@/types'
 
 const auth = useAuthStore()
@@ -90,23 +112,20 @@ const diagnoses = ref<PestDiagnosisListItem[]>([])
 const groups = ref<Group[]>([])
 const error = ref('')
 const previewImage = ref<string | null>(null)
+const confirm = useConfirm()
+const toast = useToast()
 
 const filters = reactive({
   group_id: '' as string | number,
   diagnosis_result: '' as string,
 })
 
-const resultOptions: { value: DiagnosisResult; label: string }[] = [
-  { value: 'tomato_healthy', label: '番茄健康' },
-  { value: 'tomato_early_blight', label: '番茄早疫病' },
-  { value: 'tomato_late_blight', label: '番茄晚疫病' },
-  { value: 'strawberry_healthy', label: '草莓健康' },
-  { value: 'strawberry_leaf_scorch', label: '草莓叶焦病' },
-]
+const resultOptions: { value: DiagnosisResult; label: string }[] = (
+  Object.keys(diagnosisResultLabels) as DiagnosisResult[]
+).map((value) => ({ value, label: diagnosisResultLabels[value] }))
 
 function resultLabel(result: string): string {
-  const opt = resultOptions.find((o) => o.value === result)
-  return opt ? opt.label : result
+  return diagnosisResultLabels[result] ?? '未知结果'
 }
 
 function isHealthy(result: string): boolean {
@@ -130,12 +149,19 @@ async function loadDiagnoses() {
 }
 
 async function handleDelete(id: number) {
-  if (!confirm(`确认删除诊断记录 #${id}？图片将一并删除。`)) return
+  const ok = await confirm({
+    title: '删除诊断记录',
+    message: `诊断记录 #${id} 及其图片将被永久删除。`,
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!ok) return
   try {
     await deletePestDiagnosis(id)
     diagnoses.value = diagnoses.value.filter((d) => d.id !== id)
+    toast.success('诊断记录已删除')
   } catch {
-    error.value = '删除失败（仅管理员可删除）。'
+    toast.error('删除失败（仅管理员可删除）')
   }
 }
 
@@ -224,5 +250,36 @@ onMounted(async () => {
 .empty-state-icon {
   font-size: 36px;
   margin-bottom: 8px;
+}
+
+.confidence-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.confidence-ring {
+  transform: rotate(-90deg);
+}
+
+.ring-track,
+.ring-value {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.ring-track {
+  stroke: var(--line);
+}
+
+.ring-value.healthy {
+  stroke: var(--primary);
+}
+
+.ring-value.disease {
+  stroke: var(--terracotta);
 }
 </style>

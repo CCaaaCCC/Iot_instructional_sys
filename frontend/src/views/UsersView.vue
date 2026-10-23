@@ -23,8 +23,8 @@
         <label>
           <div class="form-label">角色</div>
           <select v-model="form.role" class="select">
-            <option value="admin">admin - 管理员</option>
-            <option value="teacher">teacher - 教师</option>
+            <option value="admin">管理员</option>
+            <option value="teacher">教师</option>
           </select>
         </label>
         <label>
@@ -38,8 +38,7 @@
           <button class="btn primary">创建用户</button>
         </div>
       </form>
-      <div v-if="message" class="msg-success">{{ message }}</div>
-      <div v-if="error" class="msg-error">{{ error }}</div>
+
     </SectionCard>
 
     <SectionCard>
@@ -51,9 +50,9 @@
         <div class="toolbar">
           <select v-model="filterRole" class="select" style="width: 140px" @change="filterUsers">
             <option value="">全部角色</option>
-            <option value="admin">admin</option>
-            <option value="teacher">teacher</option>
-            <option value="student">student</option>
+            <option value="admin">管理员</option>
+            <option value="teacher">教师</option>
+            <option value="student">学生</option>
           </select>
           <button class="btn secondary sm" @click="loadUsers">刷新</button>
         </div>
@@ -80,9 +79,12 @@
           </tr>
         </tbody>
       </table>
-      <div v-if="!filteredUsers.length" class="empty-state">
-        暂无用户数据
-      </div>
+      <EmptyState
+        v-if="!filteredUsers.length"
+        icon="inbox"
+        title="暂无用户"
+        desc="调整筛选条件，或在上方创建新的管理员/教师账号"
+      />
     </SectionCard>
   </div>
 </template>
@@ -90,13 +92,15 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import SectionCard from '@/components/SectionCard.vue'
+import EmptyState from '@/components/EmptyState.vue'
+import { useToast } from '@/composables/useToast'
 import { createUser, fetchUsers } from '@/api/users'
+import { userRoleLabels } from '@/utils/labels'
 import type { User, UserRole } from '@/types'
 
 const users = ref<User[]>([])
-const message = ref('')
-const error = ref('')
 const filterRole = ref<UserRole | ''>('')
+const toast = useToast()
 
 const form = reactive({
   username: '',
@@ -123,12 +127,7 @@ function roleClass(role: UserRole) {
 }
 
 function roleLabel(role: UserRole) {
-  const map: Record<UserRole, string> = {
-    admin: '管理员',
-    teacher: '教师',
-    student: '学生',
-  }
-  return `${role} - ${map[role]}`
+  return userRoleLabels[role] ?? '未知角色'
 }
 
 function filterUsers() {
@@ -136,27 +135,31 @@ function filterUsers() {
 }
 
 async function loadUsers() {
-  message.value = ''
-  error.value = ''
   try {
     users.value = await fetchUsers()
   } catch {
-    error.value = '用户列表加载失败，请确认当前账号为管理员。'
+    toast.error('用户列表加载失败，请确认当前账号为管理员')
   }
 }
 
 async function handleCreate() {
-  message.value = ''
-  error.value = ''
+  if (!form.username.trim()) {
+    toast.warning('请输入用户名')
+    return
+  }
+  if (form.password.length < 8 || !/[A-Za-z]/.test(form.password) || !/\d/.test(form.password)) {
+    toast.warning('密码至少 8 位，且需同时包含字母和数字')
+    return
+  }
   try {
     await createUser({
-      username: form.username,
+      username: form.username.trim(),
       display_name: form.display_name || null,
       password: form.password,
       role: form.role,
       is_active: form.is_active,
     })
-    message.value = '用户创建成功'
+    toast.success('用户已创建')
     form.username = ''
     form.display_name = ''
     form.password = ''
@@ -164,7 +167,7 @@ async function handleCreate() {
     form.is_active = true
     await loadUsers()
   } catch {
-    error.value = '用户创建失败，请确认当前账号为管理员，且密码满足复杂度要求（至少 8 位且含字母+数字）。'
+    toast.error('用户创建失败，请检查用户名是否已存在')
   }
 }
 

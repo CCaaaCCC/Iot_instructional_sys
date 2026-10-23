@@ -29,9 +29,12 @@
           </tr>
         </tbody>
       </table>
-      <div v-if="!operationLogs.length" class="empty-state">
-        暂无操作日志
-      </div>
+      <EmptyState
+        v-if="!operationLogs.length"
+        icon="inbox"
+        title="暂无操作日志"
+        desc="后台的创建、修改、删除操作都会记录在这里"
+      />
     </SectionCard>
 
     <div class="grid two-col">
@@ -62,9 +65,12 @@
             </tr>
           </tbody>
         </table>
-        <div v-if="!deviceLogs.length" class="empty-state">
-          暂无设备日志
-        </div>
+        <EmptyState
+          v-if="!deviceLogs.length"
+          icon="chart"
+          title="暂无设备日志"
+          desc="组件控制和规则触发后会出现在这里"
+        />
       </SectionCard>
 
       <SectionCard>
@@ -94,9 +100,12 @@
             </tr>
           </tbody>
         </table>
-        <div v-if="!ruleLogs.length" class="empty-state">
-          暂无规则日志
-        </div>
+        <EmptyState
+          v-if="!ruleLogs.length"
+          icon="leaf"
+          title="暂无规则日志"
+          desc="自动控制规则触发后会记录执行结果"
+        />
       </SectionCard>
     </div>
   </div>
@@ -105,6 +114,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import SectionCard from '@/components/SectionCard.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import { fetchDeviceLogs, fetchOperationLogs, fetchRuleLogs } from '@/api/logs'
 import type { DeviceOperationLog, OperationLog, RuleLog } from '@/types'
 

@@ -8,30 +8,46 @@
       <span v-if="unreadCount > 0" class="bell-badge">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
     </button>
 
-    <div v-if="open" class="bell-dropdown">
-      <div class="bell-dropdown-header">
-        <span class="bell-dropdown-title">通知</span>
-        <button v-if="unreadCount > 0" class="bell-mark-all" @click="handleMarkAllRead" type="button">全部已读</button>
-      </div>
-      <div class="bell-dropdown-body">
-        <div v-if="loading" class="bell-empty">加载中...</div>
-        <div v-else-if="notifications.length === 0" class="bell-empty">暂无通知</div>
-        <div v-else>
-          <button
-            v-for="n in notifications"
-            :key="n.id"
-            class="bell-item"
-            :class="{ unread: !n.is_read }"
-            @click="handleClickNotification(n)"
-            type="button"
-          >
-            <div class="bell-item-title">{{ n.title }}</div>
-            <div class="bell-item-content">{{ n.content }}</div>
-            <div class="bell-item-time">{{ formatTime(n.created_at) }}</div>
-          </button>
+    <Transition name="bell-fade">
+      <div v-if="open" class="bell-dropdown">
+        <div class="bell-dropdown-header">
+          <span class="bell-dropdown-title">
+            通知
+            <span v-if="unreadCount > 0" class="bell-title-count">{{ unreadCount }} 条未读</span>
+          </span>
+          <button v-if="unreadCount > 0" class="bell-mark-all" @click="handleMarkAllRead" type="button">全部已读</button>
+        </div>
+        <div class="bell-dropdown-body">
+          <div v-if="loading" class="bell-skeleton">
+            <div v-for="i in 3" :key="i" class="bell-skeleton-row">
+              <span class="skeleton text" />
+              <span class="skeleton text short" />
+            </div>
+          </div>
+          <EmptyState
+            v-else-if="notifications.length === 0"
+            icon="inbox"
+            title="暂无通知"
+            desc="新的作业、批阅和设备告警会出现在这里"
+          />
+          <div v-else>
+            <button
+              v-for="n in notifications"
+              :key="n.id"
+              class="bell-item"
+              :class="{ unread: !n.is_read }"
+              @click="handleClickNotification(n)"
+              type="button"
+            >
+              <span v-if="!n.is_read" class="bell-unread-dot"></span>
+              <div class="bell-item-title">{{ n.title }}</div>
+              <div class="bell-item-content">{{ n.content }}</div>
+              <div class="bell-item-time">{{ formatTime(n.created_at) }}</div>
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </Transition>
   </div>
 </template>
 
@@ -39,6 +55,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { notificationsApi, type Notification } from '@/api/notifications'
+import EmptyState from '@/components/EmptyState.vue'
 
 const router = useRouter()
 const open = ref(false)
@@ -204,6 +221,12 @@ defineExpose({ refresh: fetchUnreadCount })
   font-weight: 600;
   color: var(--text);
 }
+.bell-title-count {
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
 .bell-mark-all {
   background: transparent;
   border: none;
@@ -229,7 +252,45 @@ defineExpose({ refresh: fetchUnreadCount })
   font-size: 13px;
 }
 
+.bell-skeleton {
+  padding: 14px 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.bell-skeleton-row {
+  display: grid;
+  gap: 7px;
+}
+
+.bell-skeleton-row .skeleton.short {
+  width: 55%;
+}
+
+.bell-unread-dot {
+  position: absolute;
+  left: 6px;
+  top: 17px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 6px var(--primary-glow);
+}
+
+.bell-fade-enter-active,
+.bell-fade-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.bell-fade-enter-from,
+.bell-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-5px) scale(0.98);
+}
+
 .bell-item {
+  position: relative;
   display: block;
   width: 100%;
   text-align: left;

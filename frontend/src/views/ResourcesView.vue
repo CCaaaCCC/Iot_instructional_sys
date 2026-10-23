@@ -67,11 +67,10 @@
           </label>
         </label>
         <div class="form-grid-span" style="display:flex;gap:10px">
-          <button class="btn primary" :disabled="submitting">{{ submitting ? '上传中...' : '上传资源' }}</button>
+          <button :class="['btn', 'primary', { loading: submitting }]" :disabled="submitting">上传资源</button>
         </div>
       </form>
-      <div v-if="message" class="msg-success">{{ message }}</div>
-      <div v-if="errorMsg" class="msg-error">{{ errorMsg }}</div>
+
     </SectionCard>
 
     <SectionCard>
@@ -130,9 +129,12 @@
           </tr>
         </tbody>
       </table>
-      <div v-else class="empty-state">
-        暂无教学资源
-      </div>
+      <EmptyState
+        v-else
+        icon="inbox"
+        title="暂无教学资源"
+        desc="上传课件或资料，发布后学生即可查看"
+      />
     </SectionCard>
 
     <FilePreviewModal v-if="previewItem" :file="previewItem" @close="previewItem = null" />
@@ -143,6 +145,9 @@
 import { onMounted, reactive, ref } from 'vue'
 import SectionCard from '@/components/SectionCard.vue'
 import FilePreviewModal from '@/components/FilePreviewModal.vue'
+import EmptyState from '@/components/EmptyState.vue'
+import { useConfirm } from '@/composables/useConfirm'
+import { useToast } from '@/composables/useToast'
 import {
   fetchResources,
   createResource,
@@ -158,9 +163,9 @@ const resources = ref<TeachingResource[]>([])
 const classrooms = ref<Classroom[]>([])
 const groups = ref<Group[]>([])
 const tasks = ref<ClassTask[]>([])
-const message = ref('')
-const errorMsg = ref('')
 const submitting = ref(false)
+const confirm = useConfirm()
+const toast = useToast()
 const filterSubject = ref('')
 const selectedFile = ref<File | null>(null)
 const previewItem = ref<TeachingResource | null>(null)
@@ -194,12 +199,14 @@ function onFileChange(e: Event) {
 }
 
 async function handleCreate() {
-  if (!selectedFile.value) {
-    errorMsg.value = '请选择文件'
+  if (!form.title.trim()) {
+    toast.warning('请填写资源标题')
     return
   }
-  message.value = ''
-  errorMsg.value = ''
+  if (!selectedFile.value) {
+    toast.warning('请选择要上传的文件')
+    return
+  }
   submitting.value = true
   try {
     const fd = new FormData()
@@ -213,24 +220,23 @@ async function handleCreate() {
     fd.append('is_published', String(form.is_published))
     fd.append('file', selectedFile.value)
     await createResource(fd)
-    message.value = '资源上传成功！'
+    toast.success('教学资源已上传')
     resetForm()
     await loadResources()
   } catch {
-    errorMsg.value = '上传失败。'
+    toast.error('上传失败，请检查文件格式与大小')
   } finally {
     submitting.value = false
   }
 }
 
 async function loadResources() {
-  errorMsg.value = ''
   try {
     const params: Record<string, string | number> = {}
     if (filterSubject.value) params.subject = filterSubject.value
     resources.value = await fetchResources(params)
   } catch {
-    errorMsg.value = '加载资源列表失败。'
+    toast.error('资源列表加载失败')
   }
 }
 
@@ -239,18 +245,26 @@ async function togglePublish(r: TeachingResource) {
     const updated = await togglePublishResource(r.id)
     const idx = resources.value.findIndex((x) => x.id === r.id)
     if (idx !== -1) resources.value[idx] = updated
+    toast.success(updated.is_published ? '资源已发布，学生端可见' : '资源已撤回')
   } catch {
-    errorMsg.value = '操作失败。'
+    toast.error('操作失败，请稍后重试')
   }
 }
 
 async function handleDelete(r: TeachingResource) {
-  if (!confirm(`确定要删除 "${r.title}" 吗？`)) return
+  const ok = await confirm({
+    title: '删除教学资源',
+    message: `「${r.title}」及其文件将被永久删除。`,
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!ok) return
   try {
     await deleteResource(r.id)
     resources.value = resources.value.filter((x) => x.id !== r.id)
+    toast.success('资源已删除')
   } catch {
-    errorMsg.value = '删除失败。'
+    toast.error('删除失败，请稍后重试')
   }
 }
 

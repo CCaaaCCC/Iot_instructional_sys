@@ -16,9 +16,12 @@
           </div>
           <RouterLink v-if="canManageClassrooms" :to="{ name: 'classrooms' }" class="btn secondary sm">管理班级</RouterLink>
         </template>
-        <div v-if="!classrooms.length" class="empty-state">
-          暂无班级数据，请先创建班级
-        </div>
+        <EmptyState
+          v-if="!classrooms.length"
+          icon="sprout"
+          title="暂无班级"
+          desc="创建班级后，这里会显示小组与学习进度"
+        />
         <div v-else class="grid" style="gap: 10px">
           <div v-for="c in classrooms" :key="c.id" class="classroom-card">
             <div class="classroom-header">
@@ -43,9 +46,12 @@
           </div>
           <RouterLink v-if="canManageTasks" :to="{ name: 'tasks' }" class="btn secondary sm">全部任务</RouterLink>
         </template>
-        <div v-if="!tasks.length" class="empty-state">
-          暂无任务
-        </div>
+        <EmptyState
+          v-if="!tasks.length"
+          icon="inbox"
+          title="暂无课堂任务"
+          desc="发布任务后，学生端会同步看到"
+        />
         <table v-else class="table">
           <thead>
             <tr>
@@ -83,7 +89,7 @@
           </div>
         </template>
         <div v-if="overview?.latest_sensor_data" class="grid" style="gap: 10px">
-          <div class="badge success"><span class="badge-dot"></span> 采样时间：{{ formatTime(overview.latest_sensor_data.recorded_at) }}</div>
+          <div class="badge success"><span class="badge-dot"></span> 采样时间：{{ relativeTime(overview.latest_sensor_data.recorded_at) }}</div>
           <div class="card-subtitle">节点 ID：{{ overview.latest_sensor_data.node_id }}</div>
           <table class="table">
             <tbody>
@@ -96,9 +102,12 @@
             </tbody>
           </table>
         </div>
-        <div v-else class="empty-state">
-          暂无传感器数据
-        </div>
+        <EmptyState
+          v-else
+          icon="chart"
+          title="暂无传感器数据"
+          desc="设备上报后，最新环境数据会显示在这里"
+        />
       </SectionCard>
 
       <SectionCard>
@@ -109,9 +118,12 @@
           </div>
           <RouterLink v-if="canReview" :to="{ name: 'grading' }" class="btn primary sm">去批阅</RouterLink>
         </template>
-        <div v-if="!pendingSubmissions.length" class="empty-state">
-          暂无待批阅提交
-        </div>
+        <EmptyState
+          v-if="!pendingSubmissions.length"
+          icon="leaf"
+          title="暂无待批阅提交"
+          desc="学生提交作业后，会在这里提醒你批阅"
+        />
         <table v-else class="table">
           <thead>
             <tr>
@@ -198,6 +210,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import SectionCard from '@/components/SectionCard.vue'
 import StatCard from '@/components/StatCard.vue'
 import LineChart from '@/components/LineChart.vue'
+import EmptyState from '@/components/EmptyState.vue'
+import { componentTypeLabels, relativeTime } from '@/utils/labels'
 import { fetchDashboardOverview, fetchComponentSummary } from '@/api/dashboard'
 import { fetchSensorCharts } from '@/api/sensors'
 import { fetchClassrooms } from '@/api/classrooms'
@@ -251,13 +265,7 @@ function subjectLabel(subject: CourseSubject) {
 }
 
 function componentTypeLabel(type: ComponentType) {
-  const map: Record<ComponentType, string> = {
-    fan: '风扇',
-    pump: '水泵',
-    light: '补光灯',
-    sensor: '传感器',
-  }
-  return `${type} - ${map[type]}`
+  return componentTypeLabels[type] ?? '未知组件'
 }
 
 function taskStatusClass(status: string) {

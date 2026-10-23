@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## Project Overview
 
@@ -48,6 +48,19 @@ python mcp_bridge.py                                         # MCP bridge to xia
 Each group has device tokens (one per device type), all bound to the same `group_id`. Tokens are created/reset/revoked via `/device-tokens` endpoints.
 
 > **Note on `esp32s3` vs `esp32s3_monitor`**: These are two physically distinct ESP32-S3 boards. `esp32s3` is the 小智 AI voice assistant (MCP protocol); `esp32s3_monitor` is the TFT dashboard upper computer (MQTT protocol, reports sensor data + receives control commands). Do not confuse them.
+
+### Hardware Firmware Code (Outside This Repo)
+
+Firmware/edge code for the four device types lives in separate projects, NOT in this repository. Full inventory with wiring, protocols, and flash commands: **`HARDWARE_CODE.md`** (repo root).
+
+| Path | Project | Device |
+|------|---------|--------|
+| `C:\Users\xiezh\Documents\Arduino\greenhouse_lower_node\` | ESP32 lower node: sensor sampling + actuator control, UART to upper computer | `esp32` |
+| `C:\Users\xiezh\Documents\PlatformIO\Projects\tft_screen_1.9\` | ESP32-S3 dual-screen upper computer (TFT dashboard + OLED weather), UART ↔ lower node, MQTT ↔ backend | `esp32s3_monitor` |
+| `D:\Project\esp32cam-upload\` | ESP32-CAM firmware: capture on reset → upload to `/api/v1/pest-diagnoses/upload` | `esp32cam` |
+| `D:\Project\my_model\` | Pest-classification model training/inference (PyTorch); artifact copied to `models/pest_model.pth` here | backend AI |
+
+The 小智 AI (`esp32s3`) firmware is a third-party xiaozhi.me build; only the backend MCP endpoints live in this repo.
 
 ### Layered Backend (3-tier)
 
@@ -107,7 +120,7 @@ get_device_context(db, credentials) → verify device token → DeviceContext(to
 ```
 
 Two independent auth tracks coexist:
-- **User JWT** (`oauth2_scheme`): for admin/teacher/operator/student endpoints via `require_roles`
+- **User JWT** (`oauth2_scheme`): for admin/teacher/student endpoints via `require_roles`
 - **Device token** (`get_device_context` in `app/core/device_auth.py`): for ESP32/ESP32-CAM/ESP32-S3 hardware endpoints. Uses a separate `HTTPBearer` instance with `auto_error=False`. Returns `DeviceContext` dataclass with `token`, `group_id`, `node_id`, `device_type`. All device-scoped tools automatically use `group_id` for data isolation — never accept external `group_id` from request body.
 
 Login uses OAuth2 form format (`application/x-www-form-urlencoded`), NOT JSON. Token URL: `{API_V1_STR}/auth/login`.
@@ -148,6 +161,8 @@ Uses `pydantic-settings` with `.env` file auto-load. All settings accessed via `
 ### Schema Migrations
 
 No Alembic. Schema changes are applied by `Base.metadata.create_all()` in `app/scripts/init_db.py` (creates tables that don't exist). For existing tables needing schema changes, delete the MySQL database and re-run `init_db()` (dev data is disposable). Historical SQLite PRAGMA-based migrations have been removed after the MySQL migration.
+
+`init_db()` also runs a legacy-data normalization at startup: `UPDATE users SET role='teacher' WHERE role='operator'`. The `operator` role was removed from `UserRole` (only admin/teacher/student remain); without this, old databases containing `operator` rows crash ORM deserialization with `LookupError` (symptom: `GET /users` returns 500).
 
 ### MQTT Integration + WebSocket: `app/core/mqtt_client.py` + `app/core/websocket_manager.py`
 
@@ -195,7 +210,7 @@ Key design points:
 - **Scoping**: Every tool resolves `group_id` from the device token — never accepts external `group_id`
 - **Logging**: Every call writes `McpCallLog` with `duration_ms` + `expires_at=now+30d` (auto-cleanup)
 - **Tools available**: GET `/mcp/tools` lists tool definitions, POST `/mcp/tools/call` dispatches
-- **Logs viewable**: GET `/mcp/logs` (admin/teacher/operator only) for audit
+- **Logs viewable**: GET `/mcp/logs` (admin/teacher only) for audit
 
 ### API Conventions
 
@@ -208,8 +223,10 @@ Key design points:
 
 - **Vue 3 Composition API + TypeScript + Vite 5**. Pinia for auth state. Vue Router with role-based guards.
 - **Route structure**: `/student/*` (StudentLayout) vs `/*` (AdminLayout). Logged-in students are forced to `/student`, non-students can't access `/student`.
-- **Role-based access** (`frontend/src/router/index.ts`): Each admin route has a `roleAccess` map. Students are blocked at guard level before any admin route check. Operator has limited access (devices, logs, pest-diagnoses, mcp-tools).
-- **Shared components** (`frontend/src/components/`): `StatCard.vue`, `SectionCard.vue`, `LineChart.vue` (ECharts wrapper, re-renders on theme change), `NotificationBell.vue`.
+- **Role-based access** (`frontend/src/router/index.ts`): Each admin route has a `roleAccess` map. Students are blocked at guard level before any admin route check.
+- **Shared components** (`frontend/src/components/`): `StatCard.vue` (CountUp number animation), `SectionCard.vue`, `LineChart.vue` (ECharts wrapper, re-renders on theme change), `NotificationBell.vue`, `AppToast.vue`, `AppConfirm.vue`, `EmptyState.vue`, `SkeletonTable.vue`, `AiAssistant.vue`, `AiMessage.vue`.
+- **Global feedback infrastructure**: native `alert()`/`confirm()` are banned app-wide. Use `useToast()` (`frontend/src/composables/useToast.ts`, module-level singleton queue; `success/error/info/warning`) for non-blocking feedback and `useConfirm()` (`frontend/src/composables/useConfirm.ts`, Promise-based, `danger` option blocks overlay-click dismiss) for confirmations. Both are mounted once in `App.vue`. Enum → Chinese label maps live in `frontend/src/utils/labels.ts` (`labelOf`, `relativeTime`, `formatSize`) — never hardcode English enum values in templates.
+- **Layouts**: `AdminLayout.vue` has collapsible menu groups (persisted to localStorage) and a top-right user menu (theme switch + logout); `StudentLayout.vue` mirrors the user menu. `LoginView.vue` supports click-to-fill demo accounts, password visibility toggle, loading state, and error shake.
 - **WebSocket composable** (`frontend/src/composables/useWebSocket.ts`): **模块级单例**（所有组件共享同一连接），auto-connects via native WebSocket API, JWT extracted from localStorage. Exponential backoff reconnect (1s→30s max), 30s heartbeat (`ping`/`pong`). Returns `{ connected, latestSensorData, componentUpdates, deviceStatuses, pestDiagnoses, latestNotification, disconnect, reset }`. 数据有上限（component_status/device_status 各保留 50 条，pest_diagnosis 保留 20 条）。认证失败（4001/4003）不重连。登出时 `auth.logout()` 调用 `reset()` 断开并清理。Both layouts `watch(latestNotification)` to refresh `NotificationBell` in real time.
 - **Axios interceptor** (`frontend/src/api/http.ts`): auto-attaches Bearer token from localStorage. 401 → clears auth store → redirects to `/login`.
 - **Vite proxy**: `/api`, `/avatars`, `/courseware-files`, `/resource-files`, `/submission-files`, `/pest-images` → `http://127.0.0.1:8001` (configure with `VITE_PROXY_TARGET`).
@@ -257,12 +274,12 @@ Built on DeepSeek API (OpenAI-compatible). Conversational assistant for students
 - **Empty session cleanup**: When `POST /ai/chat` creates a new session but `stream_chat` fails early (API unconfigured or quota exceeded), the empty session is deleted via `is_new_session` flag passed from router to service — no orphan "新对话" sessions left in DB.
 - **Session isolation**: `ChatSession.user_id == current_user.id` enforced in service layer — teachers cannot read students' conversations (privacy-first).
 - **System prompt**: role-aware persona (student: 「棚棚小助手」, 通俗语言, ≤300 字; teacher: 教学助手, 专业简洁, ≤500 字) + page context injection (`ChatContext.route_name` + `page_data`).
-- **Frontend**: floating button (bottom-right) + right drawer (`AiAssistant.vue`), `useAI` composable per layout (non-singleton), `AiMessage.vue` renders Markdown via `marked` + `DOMPurify`. Streaming via `XMLHttpRequest` + `onprogress` (EventSource cannot set Authorization header, fetch cannot detect `ERR_ABORTED`). Uses `processedLength` variable to track already-parsed response text. Operator role hides the floating button.
+- **Frontend**: floating button (bottom-right) + right drawer (`AiAssistant.vue`), `useAI` composable per layout (non-singleton), `AiMessage.vue` renders Markdown via `marked` + `DOMPurify`. Streaming via `XMLHttpRequest` + `onprogress` (EventSource cannot set Authorization header, fetch cannot detect `ERR_ABORTED`). Uses `processedLength` variable to track already-parsed response text.
 - **Cleanup**: `ai_service.cleanup_old_sessions(days=180)` called by `init_db()` at startup.
 
 ### Key Relationships
 
-- `User.group_id` → `Group.id` (students belong to one group, NULL for admin/teacher/operator)
+- `User.group_id` → `Group.id` (students belong to one group, NULL for admin/teacher)
 - `Group.class_id` → `Classroom.id`, `Group.node_id` → `DeviceNode.id`
 - `DeviceNode` has many `Component` (fan/pump/light/sensor). Components are actuators (on/off/auto) except `type=sensor`.
 - `SensorData.node_id` → `DeviceNode.id`

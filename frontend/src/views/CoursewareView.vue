@@ -69,11 +69,9 @@
             </label>
           </label>
           <div class="form-grid-span" style="display:flex;gap:10px">
-            <button class="btn primary" :disabled="submitting">{{ submitting ? '上传中...' : '上传课件' }}</button>
+            <button :class="['btn', 'primary', { loading: submitting }]" :disabled="submitting">上传课件</button>
           </div>
         </form>
-        <div v-if="message" class="msg-success">{{ message }}</div>
-        <div v-if="errorMsg" class="msg-error">{{ errorMsg }}</div>
       </SectionCard>
 
       <SectionCard>
@@ -129,9 +127,12 @@
             </tr>
           </tbody>
         </table>
-        <div v-else class="empty-state">
-          暂无课件，上传你的第一个课件吧
-        </div>
+        <EmptyState
+          v-else
+          icon="inbox"
+          title="暂无课件"
+          desc="上传你的第一个课件，或在公共库中寻找灵感"
+        />
       </SectionCard>
     </template>
 
@@ -200,9 +201,12 @@
             </tr>
           </tbody>
         </table>
-        <div v-else class="empty-state">
-          公共课件库暂无资源
-        </div>
+        <EmptyState
+          v-else
+          icon="inbox"
+          title="公共课件库暂无资源"
+          desc="试试更换筛选条件，或等待其他老师分享"
+        />
       </SectionCard>
     </template>
 
@@ -214,6 +218,9 @@
 import { onMounted, reactive, ref } from 'vue'
 import SectionCard from '@/components/SectionCard.vue'
 import FilePreviewModal from '@/components/FilePreviewModal.vue'
+import EmptyState from '@/components/EmptyState.vue'
+import { useConfirm } from '@/composables/useConfirm'
+import { useToast } from '@/composables/useToast'
 import {
   fetchMyCourseware,
   fetchPublicCourseware,
@@ -226,9 +233,9 @@ import type { Courseware } from '@/types'
 const tab = ref<'my' | 'public'>('my')
 const myCourseware = ref<Courseware[]>([])
 const publicCourseware = ref<Courseware[]>([])
-const message = ref('')
-const errorMsg = ref('')
 const submitting = ref(false)
+const confirm = useConfirm()
+const toast = useToast()
 const selectedFile = ref<File | null>(null)
 const previewItem = ref<Courseware | null>(null)
 
@@ -266,12 +273,14 @@ function onFileChange(e: Event) {
 }
 
 async function handleCreate() {
-  if (!selectedFile.value) {
-    errorMsg.value = '请选择文件'
+  if (!form.title.trim()) {
+    toast.warning('请填写课件名称')
     return
   }
-  message.value = ''
-  errorMsg.value = ''
+  if (!selectedFile.value) {
+    toast.warning('请选择要上传的文件')
+    return
+  }
   submitting.value = true
   try {
     const fd = new FormData()
@@ -284,30 +293,28 @@ async function handleCreate() {
     fd.append('is_public', String(form.is_public))
     fd.append('file', selectedFile.value)
     await createCourseware(fd)
-    message.value = '课件上传成功！'
+    toast.success('课件已上传')
     resetForm()
     await loadMyCourseware()
     if (form.is_public) await loadPublicCourseware()
   } catch {
-    errorMsg.value = '上传失败。'
+    toast.error('上传失败，请检查文件格式与大小')
   } finally {
     submitting.value = false
   }
 }
 
 async function loadMyCourseware() {
-  errorMsg.value = ''
   try {
     const params: Record<string, string> = {}
     if (myFilterType.value) params.file_type = myFilterType.value
     myCourseware.value = await fetchMyCourseware(params)
   } catch {
-    errorMsg.value = '加载课件列表失败。'
+    toast.error('课件列表加载失败')
   }
 }
 
 async function loadPublicCourseware() {
-  errorMsg.value = ''
   try {
     const params: Record<string, string> = {}
     if (pubFilterType.value) params.file_type = pubFilterType.value
@@ -316,7 +323,7 @@ async function loadPublicCourseware() {
     if (pubSearch.value) params.search = pubSearch.value
     publicCourseware.value = await fetchPublicCourseware(params)
   } catch {
-    errorMsg.value = '加载公共课件库失败。'
+    toast.error('公共课件库加载失败')
   }
 }
 
@@ -325,18 +332,26 @@ async function togglePublic(c: Courseware) {
     const updated = await toggleCoursewarePublic(c.id)
     const idx = myCourseware.value.findIndex((x) => x.id === c.id)
     if (idx !== -1) myCourseware.value[idx] = updated
+    toast.success(updated.is_public ? '已分享到公共课件库' : '已设为私有')
   } catch {
-    errorMsg.value = '操作失败。'
+    toast.error('操作失败，请稍后重试')
   }
 }
 
 async function handleDelete(c: Courseware) {
-  if (!confirm(`确定要删除 "${c.title}" 吗？`)) return
+  const ok = await confirm({
+    title: '删除课件',
+    message: `「${c.title}」及其文件将被永久删除。`,
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!ok) return
   try {
     await deleteCourseware(c.id)
     myCourseware.value = myCourseware.value.filter((x) => x.id !== c.id)
+    toast.success('课件已删除')
   } catch {
-    errorMsg.value = '删除失败。'
+    toast.error('删除失败，请稍后重试')
   }
 }
 

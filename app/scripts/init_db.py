@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.core.config import settings
 from app.core.security import get_password_hash
@@ -34,6 +34,15 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
 
     with SessionLocal() as db:
+        # 兼容历史数据：旧版本存在 operator 角色，当前 UserRole 枚举已移除该值。
+        # 若不归一化，ORM 读取到 role='operator' 的行会抛 LookupError（用户列表 500）。
+        normalized = db.execute(
+            text("UPDATE users SET role = 'teacher' WHERE role = 'operator'")
+        )
+        if normalized.rowcount:
+            db.commit()
+            print(f"[init_db] Normalized {normalized.rowcount} legacy operator user(s) to teacher")
+
         admin = db.execute(
             select(User).where(User.username == settings.INIT_ADMIN_USERNAME)
         ).scalar_one_or_none()

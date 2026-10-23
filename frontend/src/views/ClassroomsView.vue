@@ -15,15 +15,14 @@
         <label>
           <div class="form-label">科目</div>
           <select v-model="form.subject" class="select">
-            <option value="labor">labor - 劳动课</option>
-            <option value="science">science - 科学课</option>
+            <option value="labor">劳动课</option>
+            <option value="science">科学课</option>
           </select>
         </label>
         <div style="display:flex;align-items:flex-end">
           <button class="btn primary">创建班级</button>
         </div>
       </form>
-      <div v-if="message" class="msg-success">{{ message }}</div>
       <div v-if="error" class="msg-error">{{ error }}</div>
     </SectionCard>
 
@@ -43,9 +42,12 @@
         </div>
       </template>
 
-      <div v-if="!filteredClassrooms.length" class="empty-state">
-        暂无班级，请先创建
-      </div>
+      <EmptyState
+        v-if="!filteredClassrooms.length"
+        icon="sprout"
+        title="暂无班级"
+        desc="在上方填写班级名称，创建第一个班级"
+      />
 
       <div v-else class="grid" style="gap: 14px">
         <div v-for="c in filteredClassrooms" :key="c.id" class="classroom-block">
@@ -109,6 +111,9 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import SectionCard from '@/components/SectionCard.vue'
 import { createClassroom, deleteClassroom, fetchClassrooms } from '@/api/classrooms'
 import { createGroup, fetchGroups, fetchGroupStudents } from '@/api/groups'
+import { useConfirm } from '@/composables/useConfirm'
+import { useToast } from '@/composables/useToast'
+import EmptyState from '@/components/EmptyState.vue'
 import type { Classroom, CourseSubject, Group, User } from '@/types'
 
 const classrooms = ref<Classroom[]>([])
@@ -116,9 +121,10 @@ const groups = ref<Group[]>([])
 const studentsMap = ref<Record<number, User[]>>({})
 const expandedClassId = ref<number | null>(null)
 const newGroupName = reactive<Record<number, string>>({})
-const message = ref('')
 const error = ref('')
 const filterSubject = ref<CourseSubject | ''>('')
+const confirm = useConfirm()
+const toast = useToast()
 
 const form = reactive({
   name: '',
@@ -147,7 +153,6 @@ function groupStudentCount(groupId: number) {
 }
 
 async function loadAll() {
-  message.value = ''
   error.value = ''
   try {
     const [classroomsData, groupsData] = await Promise.all([fetchClassrooms(), fetchGroups()])
@@ -177,44 +182,50 @@ async function toggleClassroom(classId: number) {
 }
 
 async function handleCreate() {
-  message.value = ''
-  error.value = ''
+  if (!form.name.trim()) {
+    toast.warning('请输入班级名称')
+    return
+  }
   try {
-    await createClassroom({ name: form.name, subject: form.subject })
-    message.value = '班级创建成功'
+    await createClassroom({ name: form.name.trim(), subject: form.subject })
+    toast.success('班级已创建')
     form.name = ''
     await loadAll()
   } catch {
-    error.value = '班级创建失败，请确认名称唯一。'
+    toast.error('班级创建失败，请检查名称是否重复')
   }
 }
 
 async function handleDelete(classId: number) {
-  if (!confirm(`确认删除班级 #${classId}？此操作不影响已创建的小组，但小组将失去班级归属。`)) return
+  const ok = await confirm({
+    title: '删除班级',
+    message: `删除班级 #${classId} 后，已创建的小组将失去班级归属。`,
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!ok) return
   try {
     await deleteClassroom(classId)
-    message.value = '班级已删除'
+    toast.success('班级已删除')
     await loadAll()
   } catch {
-    error.value = '班级删除失败。'
+    toast.error('班级删除失败，请稍后重试')
   }
 }
 
 async function handleCreateGroup(classId: number) {
   const name = newGroupName[classId]?.trim()
   if (!name) {
-    error.value = '请输入小组名称'
+    toast.warning('请输入小组名称')
     return
   }
-  message.value = ''
-  error.value = ''
   try {
     await createGroup({ name, class_id: classId })
     newGroupName[classId] = ''
-    message.value = '小组创建成功'
+    toast.success('小组已创建')
     await loadAll()
   } catch {
-    error.value = '小组创建失败。'
+    toast.error('小组创建失败，请稍后重试')
   }
 }
 

@@ -1,15 +1,22 @@
 <template>
   <div class="content-area">
-    <div v-if="loading" class="loading-state">加载中...</div>
+    <div v-if="loading" class="content-area">
+      <div v-for="i in 3" :key="i" class="skeleton card"></div>
+    </div>
     <div v-else-if="error" class="msg-error" style="margin-bottom: 12px">{{ error }}</div>
     <template v-else>
-      <div v-if="tasks.length === 0" class="empty-state">老师还没有给你布置任务</div>
+      <EmptyState
+        v-if="tasks.length === 0"
+        icon="sprout"
+        title="老师还没有给你布置任务"
+        desc="先去环境数据看看，等老师发布新任务吧"
+      />
       <div v-else class="task-list-vertical">
         <article v-for="task in tasks" :key="task.id" class="content-card task-card">
           <div class="task-card-header">
             <h2 class="card-title">{{ task.title }}</h2>
             <div class="task-badges">
-              <span v-if="task.status === 'pending'" class="badge warning"><span class="badge-dot"></span> 待完成</span>
+              <span v-if="task.status === 'pending'" class="badge warning"><span class="badge-dot"></span> 待开始</span>
               <span v-else-if="task.status === 'in_progress'" class="badge info"><span class="badge-dot"></span> 进行中</span>
               <span v-else class="badge success"><span class="badge-dot"></span> 已完成</span>
               <span v-if="task.task_type" class="badge muted">{{ taskTypeLabel(task.task_type) }}</span>
@@ -113,8 +120,12 @@
             </div>
             <div class="modal-footer">
               <button class="btn ghost" @click="closeSubmit">取消</button>
-              <button class="btn primary" :disabled="submitDialog.loading || !canSubmit" @click="handleSubmit">
-                {{ submitDialog.loading ? '提交中...' : '提交' }}
+              <button
+                :class="['btn', 'primary', { loading: submitDialog.loading }]"
+                :disabled="submitDialog.loading || !canSubmit"
+                @click="handleSubmit"
+              >
+                提交
               </button>
             </div>
           </div>
@@ -127,6 +138,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { fetchMyTasks, fetchMySubmissions, submitMyTask } from '@/api/student'
+import { useToast } from '@/composables/useToast'
+import { taskTypeLabels } from '@/utils/labels'
+import EmptyState from '@/components/EmptyState.vue'
 import type { ClassTask, SubmissionFile, TaskSubmission, TaskType } from '@/types'
 
 const loading = ref(true)
@@ -152,12 +166,7 @@ const canSubmit = computed(() => {
 
 const MAX_FILES = 10
 const MAX_SIZE = 20 * 1024 * 1024
-
-const taskTypeLabels: Record<TaskType, string> = {
-  observation: '观察任务',
-  experiment: '实验任务',
-  maintenance: '维护任务',
-}
+const toast = useToast()
 
 function taskTypeLabel(type: TaskType | null): string {
   return type ? taskTypeLabels[type] : ''
@@ -233,11 +242,11 @@ function handleDrop(event: DragEvent) {
 function addFiles(newFiles: File[]) {
   for (const f of newFiles) {
     if (submitDialog.files.length >= MAX_FILES) {
-      alert(`最多只能上传 ${MAX_FILES} 个文件`)
+      toast.warning(`最多只能上传 ${MAX_FILES} 个文件`)
       break
     }
     if (f.size > MAX_SIZE) {
-      alert(`文件 "${f.name}" 超过 20MB 限制`)
+      toast.warning(`文件「${f.name}」超过 20MB 限制`)
       continue
     }
     submitDialog.files.push(f)
@@ -261,10 +270,11 @@ async function handleSubmit() {
     }
     const result = await submitMyTask(submitDialog.task.id, fd)
     submissionMap[result.task_id] = result
+    toast.success('作业已提交，等待老师批阅')
     closeSubmit()
   } catch (err) {
     console.error('Failed to submit:', err)
-    alert('提交失败，请重试')
+    toast.error('提交失败，请稍后重试')
   } finally {
     submitDialog.loading = false
   }

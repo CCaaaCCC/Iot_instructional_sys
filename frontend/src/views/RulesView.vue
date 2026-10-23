@@ -15,12 +15,12 @@
         <label>
           <div class="form-label">监控指标</div>
           <select v-model="form.metric" class="select">
-            <option value="air_temp">air_temp - 空气温度</option>
-            <option value="air_humidity">air_humidity - 空气湿度</option>
-            <option value="soil_humidity">soil_humidity - 土壤湿度</option>
-            <option value="light_intensity">light_intensity - 光照强度</option>
-            <option value="soil_ph">soil_ph - 土壤pH</option>
-            <option value="co2">co2 - CO₂浓度</option>
+            <option value="air_temp">空气温度</option>
+            <option value="air_humidity">空气湿度</option>
+            <option value="soil_humidity">土壤湿度</option>
+            <option value="light_intensity">光照强度</option>
+            <option value="soil_ph">土壤 pH</option>
+            <option value="co2">CO₂ 浓度</option>
           </select>
         </label>
         <label>
@@ -39,18 +39,18 @@
         <label>
           <div class="form-label">动作组件类型</div>
           <select v-model="form.action_component_type" class="select">
-            <option value="fan">fan - 风扇</option>
-            <option value="pump">pump - 水泵</option>
-            <option value="light">light - 补光灯</option>
-            <option value="sensor">sensor - 传感器</option>
+            <option value="fan">风扇</option>
+            <option value="pump">水泵</option>
+            <option value="light">补光灯</option>
+            <option value="sensor">传感器</option>
           </select>
         </label>
         <label>
           <div class="form-label">执行动作</div>
           <select v-model="form.action" class="select">
-            <option value="on">on - 开启</option>
-            <option value="off">off - 关闭</option>
-            <option value="auto">auto - 自动</option>
+            <option value="on">开启</option>
+            <option value="off">关闭</option>
+            <option value="auto">自动</option>
           </select>
         </label>
         <label>
@@ -85,20 +85,25 @@
         <tbody>
           <tr v-for="rule in rules" :key="rule.id">
             <td><strong>{{ rule.name }}</strong></td>
-            <td>{{ rule.metric }} {{ rule.operator }} {{ rule.threshold }}</td>
-            <td>{{ rule.action_component_type }} → {{ rule.action }}</td>
+            <td>{{ metricLabel(rule.metric) }} {{ rule.operator }} {{ rule.threshold }}</td>
+            <td>{{ compTypeLabel(rule.action_component_type) }} → {{ actionLabel(rule.action) }}</td>
             <td><span class="badge" :class="rule.enabled ? 'success' : 'danger'"><span class="badge-dot"></span> {{ rule.enabled ? '启用' : '停用' }}</span></td>
             <td>{{ rule.description || '-' }}</td>
             <td>
               <div class="actions">
                 <button class="btn secondary sm" @click="toggle(rule.id)">{{ rule.enabled ? '停用' : '启用' }}</button>
+                <button class="btn danger sm" @click="handleDelete(rule)">删除</button>
               </div>
             </td>
           </tr>
         </tbody>
       </table>
-      <div v-if="message" class="msg-success">{{ message }}</div>
-      <div v-if="error" class="msg-error">{{ error }}</div>
+      <EmptyState
+        v-if="!rules.length"
+        icon="chart"
+        title="暂无自动规则"
+        desc="在上方配置第一条自动控制规则，比如「温度高于 30℃ 打开风扇」"
+      />
     </SectionCard>
   </div>
 </template>
@@ -106,12 +111,16 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import SectionCard from '@/components/SectionCard.vue'
-import { createRule, fetchRules, toggleRule } from '@/api/rules'
+import EmptyState from '@/components/EmptyState.vue'
+import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
+import { createRule, deleteRule, fetchRules, toggleRule } from '@/api/rules'
+import { componentTypeLabels, componentStatusLabels, sensorMetricLabels } from '@/utils/labels'
 import type { ComponentStatus, ComponentType, Rule, RuleOperator, SensorMetric } from '@/types'
 
 const rules = ref<Rule[]>([])
-const message = ref('')
-const error = ref('')
+const toast = useToast()
+const confirm = useConfirm()
 const form = reactive({
   name: '',
   metric: 'air_temp' as SensorMetric,
@@ -122,22 +131,47 @@ const form = reactive({
   description: '',
 })
 
+function metricLabel(metric: SensorMetric) {
+  return sensorMetricLabels[metric] ?? '未知指标'
+}
+
+function compTypeLabel(type: ComponentType) {
+  return componentTypeLabels[type] ?? '未知组件'
+}
+
+function actionLabel(action: ComponentStatus) {
+  return componentStatusLabels[action] ?? '未知动作'
+}
+
 async function loadRules() {
-  rules.value = await fetchRules()
+  try {
+    rules.value = await fetchRules()
+  } catch {
+    toast.error('规则列表加载失败')
+  }
 }
 
 async function handleCreate() {
-  message.value = ''
-  error.value = ''
+  if (!form.name.trim()) {
+    toast.warning('请填写规则名称')
+    return
+  }
+  if (Number.isNaN(form.threshold)) {
+    toast.warning('请填写有效的阈值')
+    return
+  }
   try {
     await createRule({
       ...form,
+      name: form.name.trim(),
       description: form.description || null,
     })
-    message.value = '规则创建成功'
+    toast.success('规则已创建')
+    form.name = ''
+    form.description = ''
     await loadRules()
   } catch {
-    error.value = '规则创建失败，请确认字段有效。'
+    toast.error('规则创建失败，请检查名称是否重复')
   }
 }
 
@@ -145,8 +179,26 @@ async function toggle(ruleId: number) {
   try {
     await toggleRule(ruleId)
     await loadRules()
+    toast.success('规则状态已更新')
   } catch {
-    error.value = '规则切换失败。'
+    toast.error('规则切换失败，请稍后重试')
+  }
+}
+
+async function handleDelete(rule: Rule) {
+  const ok = await confirm({
+    title: '删除规则',
+    message: `删除「${rule.name}」后，该规则的触发历史将一并清除，且无法恢复。`,
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!ok) return
+  try {
+    await deleteRule(rule.id)
+    toast.success('规则已删除')
+    await loadRules()
+  } catch {
+    toast.error('规则删除失败，请稍后重试')
   }
 }
 

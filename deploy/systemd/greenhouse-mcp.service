@@ -1,0 +1,17 @@
+[Unit]
+Description=Smart Greenhouse MCP Bridge (xiaozhi AI)
+After=network.target greenhouse-api.service
+Wants=greenhouse-api.service
+
+[Service]
+Type=simple
+User=__APP_USER__
+Group=__APP_USER__
+WorkingDirectory=__APP_DIR__
+Environment="PATH=__APP_DIR__/.venv/bin"
+ExecStart=__APP_DIR__/.venv/bin/python mcp_bridge.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

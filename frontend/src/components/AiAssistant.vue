@@ -49,7 +49,19 @@
           <div ref="messagesContainer" class="ai-messages">
             <div v-if="!messages.length && !streaming" class="ai-empty">
               <div class="ai-empty-icon">AI</div>
-              <p>你好，我是 AI 助手，可以帮你解答大棚种植、传感器、学习任务等问题。有什么可以帮你？</p>
+              <p class="ai-empty-title">{{ greeting }}</p>
+              <p class="ai-empty-desc">{{ emptyHint }}</p>
+              <div class="ai-suggestions">
+                <button
+                  v-for="q in suggestions"
+                  :key="q"
+                  class="ai-suggestion"
+                  type="button"
+                  @click="sendSuggestion(q)"
+                >
+                  {{ q }}
+                </button>
+              </div>
             </div>
             <AiMessage
               v-for="msg in messages"
@@ -100,6 +112,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAI } from '@/composables/useAI'
+import { useConfirm } from '@/composables/useConfirm'
 import AiMessage from './AiMessage.vue'
 
 const auth = useAuthStore()
@@ -123,8 +136,30 @@ const {
 } = useAI()
 
 const messagesContainer = ref<HTMLElement | null>(null)
+const confirm = useConfirm()
 
 const canUseAI = computed(() => !!auth.user)
+const isStudent = computed(() => auth.user?.role === 'student')
+
+const greeting = computed(() =>
+  isStudent.value ? '你好，我是棚棚小助手' : '你好，我是 AI 教学助手'
+)
+const emptyHint = computed(() =>
+  isStudent.value
+    ? '大棚种植、传感器、科学实验、学习任务，都可以问我。'
+    : '备课、任务设计、实验方案、学情分析，都可以问我。'
+)
+const suggestions = computed(() =>
+  isStudent.value
+    ? ['土壤湿度多少合适？', '番茄叶子发黄怎么办？', '帮我解释光合作用']
+    : ['帮我设计一节观察课', '如何分析学生成绩趋势？', '推荐一个科学实验方案']
+)
+
+async function sendSuggestion(question: string) {
+  if (streaming.value) return
+  inputText.value = question
+  await sendMessage()
+}
 
 function onSessionChange(e: Event) {
   const val = (e.target as HTMLSelectElement).value
@@ -137,7 +172,14 @@ function onSessionChange(e: Event) {
 }
 
 async function onDeleteSession() {
-  if (currentSessionId.value !== null) {
+  if (currentSessionId.value === null) return
+  const ok = await confirm({
+    title: '删除当前对话',
+    message: '删除后，这段对话的历史消息将无法恢复。',
+    confirmText: '删除',
+    danger: true,
+  })
+  if (ok) {
     await deleteSession(currentSessionId.value)
   }
 }
@@ -294,8 +336,48 @@ watch(
   text-align: center;
   color: var(--text-secondary);
   font-size: 13px;
-  padding: 40px 20px;
+  padding: 36px 16px;
   line-height: 1.7;
+}
+
+.ai-empty-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 4px;
+}
+
+.ai-empty-desc {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: 0 0 16px;
+}
+
+.ai-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.ai-suggestion {
+  padding: 9px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+  transition: all var(--transition-fast);
+}
+
+.ai-suggestion:hover {
+  border-color: var(--primary-glow);
+  background: var(--primary-soft);
+  color: var(--text);
+  transform: translateX(2px);
 }
 
 .ai-empty-icon {

@@ -29,6 +29,19 @@
                MQTT Broker  数据库    教师/学生后台 :5173
 ```
 
+## 硬件固件代码
+
+四类设备的固件/边缘代码不在本仓库内，分布在独立工程中。完整盘点（接线、协议、烧录方式）见根目录 **[HARDWARE_CODE.md](HARDWARE_CODE.md)**：
+
+| 路径 | 项目 | 设备 |
+|------|------|------|
+| `C:\Users\xiezh\Documents\Arduino\greenhouse_lower_node\` | ESP32 下位机：传感器采集 + 执行器控制，UART 对接上位机 | ESP32 主节点 |
+| `C:\Users\xiezh\Documents\PlatformIO\Projects\tft_screen_1.9\` | ESP32-S3 双屏上位机（TFT 仪表盘 + OLED 天气），UART ↔ 下位机，MQTT ↔ 后端 | ESP32-S3 Monitor |
+| `D:\Project\esp32cam-upload\` | ESP32-CAM 固件：复位自动拍照上传病虫害诊断 | ESP32-CAM |
+| `D:\Project\my_model\` | 病虫害分类模型训练/推理（PyTorch），产物拷贝为本仓库 `models/pest_model.pth` | 后端 AI 模型 |
+
+小智 AI（ESP32-S3）固件为小智官方第三方固件，本仓库仅包含其后端 MCP 接口。
+
 ## 技术栈
 
 | 层级 | 技术 | 说明 |

@@ -30,7 +30,6 @@
           <button class="btn primary">创建小组</button>
         </div>
       </form>
-      <div v-if="message" class="msg-success">{{ message }}</div>
       <div v-if="error" class="msg-error">{{ error }}</div>
     </SectionCard>
 
@@ -49,9 +48,12 @@
         </div>
       </template>
 
-      <div v-if="!filteredGroups.length" class="empty-state">
-        暂无小组，请先创建
-      </div>
+      <EmptyState
+        v-if="!filteredGroups.length"
+        icon="sprout"
+        title="暂无小组"
+        desc="在上方选择班级并填写小组名称，创建第一个小组"
+      />
 
       <div v-else class="grid" style="gap: 14px">
         <div v-for="g in filteredGroups" :key="g.id" class="group-card">
@@ -136,6 +138,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import SectionCard from '@/components/SectionCard.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import {
   batchCreateStudents,
   createGroup,
@@ -147,6 +150,8 @@ import {
 } from '@/api/groups'
 import { fetchClassrooms } from '@/api/classrooms'
 import { fetchNodes } from '@/api/device_nodes'
+import { useConfirm } from '@/composables/useConfirm'
+import { useToast } from '@/composables/useToast'
 import type { Classroom, CourseSubject, DeviceNode, Group, User } from '@/types'
 
 const classrooms = ref<Classroom[]>([])
@@ -156,8 +161,9 @@ const studentsMap = ref<Record<number, User[]>>({})
 const expandedGroupId = ref<number | null>(null)
 const bindNodeSelect = reactive<Record<number, number | undefined>>({})
 const batchForms = reactive<Record<number, { count: number; password: string }>>({})
-const message = ref('')
 const error = ref('')
+const confirm = useConfirm()
+const toast = useToast()
 const filterClassId = ref<number | undefined>(undefined)
 
 const groupForm = reactive({
@@ -208,7 +214,6 @@ function ensureBatchForm(groupId: number) {
 }
 
 async function loadAll() {
-  message.value = ''
   error.value = ''
   try {
     const [classroomsData, groupsData, nodesData] = await Promise.all([
@@ -245,14 +250,12 @@ function toggleExpand(groupId: number) {
 }
 
 async function handleCreateGroup() {
-  message.value = ''
-  error.value = ''
   if (!groupForm.class_id) {
-    error.value = '请选择所属班级'
+    toast.warning('请先选择所属班级')
     return
   }
   if (!groupForm.name.trim()) {
-    error.value = '请输入小组名称'
+    toast.warning('请输入小组名称')
     return
   }
   try {
@@ -262,54 +265,56 @@ async function handleCreateGroup() {
     }
     if (groupForm.node_id !== undefined) payload.node_id = groupForm.node_id
     await createGroup(payload)
-    message.value = '小组创建成功'
+    toast.success('小组已创建')
     groupForm.name = ''
     groupForm.node_id = undefined
     await loadAll()
   } catch {
-    error.value = '小组创建失败，请确认字段有效。'
+    toast.error('小组创建失败，请检查填写内容')
   }
 }
 
 async function handleDeleteGroup(groupId: number) {
-  if (!confirm(`确认删除小组 #${groupId}？此操作将一并移除该组下的学生账号关联。`)) return
+  const ok = await confirm({
+    title: '删除小组',
+    message: `删除小组 #${groupId} 后，该组的学生账号关联也将一并移除。`,
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!ok) return
   try {
     await deleteGroup(groupId)
-    message.value = '小组已删除'
+    toast.success('小组已删除')
     if (expandedGroupId.value === groupId) expandedGroupId.value = null
     await loadAll()
   } catch {
-    error.value = '小组删除失败。'
+    toast.error('小组删除失败，请稍后重试')
   }
 }
 
 async function handleBindNode(groupId: number) {
   const nodeId = bindNodeSelect[groupId]
   if (!nodeId) {
-    error.value = '请选择要绑定的节点'
+    toast.warning('请先选择要绑定的设备节点')
     return
   }
-  message.value = ''
-  error.value = ''
   try {
     await bindNode(groupId, nodeId)
-    message.value = `节点 #${nodeId} 已绑定到小组 #${groupId}`
+    toast.success(`节点 #${nodeId} 已绑定到小组 #${groupId}`)
     bindNodeSelect[groupId] = undefined
     await loadAll()
   } catch {
-    error.value = '节点绑定失败，该节点可能已被其他小组绑定。'
+    toast.error('绑定失败，该节点可能已被其他小组占用')
   }
 }
 
 async function handleUnbindNode(groupId: number) {
-  message.value = ''
-  error.value = ''
   try {
     await unbindNode(groupId)
-    message.value = `小组 #${groupId} 已解绑节点`
+    toast.success(`小组 #${groupId} 已解绑节点`)
     await loadAll()
   } catch {
-    error.value = '节点解绑失败。'
+    toast.error('解绑失败，请稍后重试')
   }
 }
 
@@ -317,29 +322,27 @@ async function handleBatchCreate(groupId: number) {
   const form = batchForms[groupId]
   if (!form) return
   if (!form.count || form.count < 1 || form.count > 20) {
-    error.value = '学生数量应在 1-20 之间'
+    toast.warning('学生数量应在 1-20 之间')
     return
   }
   if (form.password.length < 8) {
-    error.value = '密码至少 8 位'
+    toast.warning('密码至少需要 8 位')
     return
   }
   if (!/[a-zA-Z]/.test(form.password) || !/\d/.test(form.password)) {
-    error.value = '密码必须同时包含字母和数字'
+    toast.warning('密码需同时包含字母和数字')
     return
   }
-  message.value = ''
-  error.value = ''
   try {
     const created = await batchCreateStudents(groupId, {
       group_id: groupId,
       count: form.count,
       password: form.password,
     })
-    message.value = `成功创建 ${created.length} 个学生账号`
+    toast.success(`已创建 ${created.length} 个学生账号`)
     studentsMap.value[groupId] = await fetchGroupStudents(groupId)
   } catch {
-    error.value = '批量创建失败，请确认密码复杂度满足要求。'
+    toast.error('批量创建失败，请检查密码复杂度')
   }
 }
 

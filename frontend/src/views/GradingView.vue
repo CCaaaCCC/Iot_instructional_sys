@@ -20,9 +20,12 @@
         </div>
       </template>
 
-      <div v-if="!submissions.length" class="empty-state">
-        {{ filterReviewed === 'false' ? '暂无待批阅提交' : '暂无提交记录' }}
-      </div>
+      <EmptyState
+        v-if="!submissions.length"
+        :icon="filterReviewed === 'false' ? 'leaf' : 'inbox'"
+        :title="filterReviewed === 'false' ? '暂无待批阅提交' : '暂无提交记录'"
+        :desc="filterReviewed === 'false' ? '学生提交作业后会出现在这里' : '试试切换筛选条件'"
+      />
 
       <div v-else class="grid" style="gap: 14px">
         <div v-for="s in submissions" :key="s.id" class="submission-card">
@@ -98,8 +101,7 @@
         </div>
       </div>
 
-      <div v-if="message" class="msg-success" style="margin-top: 12px">{{ message }}</div>
-      <div v-if="error" class="msg-error" style="margin-top: 12px">{{ error }}</div>
+
     </SectionCard>
 
     <!-- Image preview modal -->
@@ -118,6 +120,8 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import SectionCard from '@/components/SectionCard.vue'
+import EmptyState from '@/components/EmptyState.vue'
+import { useToast } from '@/composables/useToast'
 import { fetchSubmissions, reviewSubmission } from '@/api/submissions'
 import { fetchTasks } from '@/api/tasks'
 import { fetchUsers } from '@/api/users'
@@ -127,8 +131,7 @@ const submissions = ref<TaskSubmission[]>([])
 const tasks = ref<ClassTask[]>([])
 const users = ref<User[]>([])
 const reviewForms = reactive<Record<number, { score: number; feedback: string }>>({})
-const message = ref('')
-const error = ref('')
+const toast = useToast()
 const filterReviewed = ref<'true' | 'false' | ''>('false')
 const filterTaskId = ref<number | undefined>(undefined)
 const previewFile = ref<SubmissionFile | null>(null)
@@ -172,8 +175,6 @@ function studentLabel(studentId: number) {
 }
 
 async function loadSubmissions() {
-  message.value = ''
-  error.value = ''
   try {
     const params: { reviewed?: boolean; task_id?: number } = {}
     if (filterReviewed.value === 'true') params.reviewed = true
@@ -186,19 +187,18 @@ async function loadSubmissions() {
       }
     }
   } catch {
-    error.value = '提交列表加载失败。'
+    toast.error('提交列表加载失败')
   }
 }
 
 async function loadAll() {
-  error.value = ''
   try {
     const [tasksData, usersData] = await Promise.all([fetchTasks(), fetchUsers()])
     tasks.value = tasksData
     users.value = usersData
     await loadSubmissions()
   } catch {
-    error.value = '基础数据加载失败。'
+    toast.error('基础数据加载失败')
   }
 }
 
@@ -206,20 +206,18 @@ async function handleReview(submissionId: number) {
   const form = reviewForms[submissionId]
   if (!form) return
   if (form.score === null || form.score === undefined || form.score < 0 || form.score > 100) {
-    error.value = '评分必须在 0-100 之间'
+    toast.warning('评分需在 0-100 之间')
     return
   }
-  message.value = ''
-  error.value = ''
   try {
     await reviewSubmission(submissionId, {
       score: form.score,
       feedback: form.feedback || undefined,
     })
-    message.value = `提交 #${submissionId} 批阅成功`
+    toast.success(`提交 #${submissionId} 已批阅`)
     await loadSubmissions()
   } catch {
-    error.value = '批阅失败，请确认字段有效。'
+    toast.error('批阅失败，请检查评分与评语')
   }
 }
 

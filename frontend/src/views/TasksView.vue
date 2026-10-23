@@ -22,24 +22,24 @@
         <label>
           <div class="form-label">课程科目</div>
           <select v-model="form.course_subject" class="select">
-            <option value="labor">labor - 劳动课</option>
-            <option value="science">science - 科学课</option>
+            <option value="labor">劳动课</option>
+            <option value="science">科学课</option>
           </select>
         </label>
         <label>
           <div class="form-label">任务类型</div>
           <select v-model="form.task_type" class="select">
-            <option value="observation">observation - 观察记录</option>
-            <option value="experiment">experiment - 实验操作</option>
-            <option value="maintenance">maintenance - 日常维护</option>
+            <option value="observation">观察记录</option>
+            <option value="experiment">实验操作</option>
+            <option value="maintenance">日常维护</option>
           </select>
         </label>
         <label>
           <div class="form-label">任务状态</div>
           <select v-model="form.status" class="select">
-            <option value="pending">pending - 待开始</option>
-            <option value="in_progress">in_progress - 进行中</option>
-            <option value="done">done - 已完成</option>
+            <option value="pending">待开始</option>
+            <option value="in_progress">进行中</option>
+            <option value="done">已完成</option>
           </select>
         </label>
         <label>
@@ -58,8 +58,7 @@
           <button class="btn primary">创建任务</button>
         </div>
       </form>
-      <div v-if="message" class="msg-success">{{ message }}</div>
-      <div v-if="error" class="msg-error">{{ error }}</div>
+
     </SectionCard>
 
     <SectionCard>
@@ -107,9 +106,12 @@
           </tr>
         </tbody>
       </table>
-      <div v-if="!tasks.length" class="empty-state">
-        暂无任务数据
-      </div>
+      <EmptyState
+        v-if="!tasks.length"
+        icon="inbox"
+        title="暂无课堂任务"
+        desc="在上方填写任务标题，为小组布置第一项任务"
+      />
     </SectionCard>
   </div>
 </template>
@@ -117,14 +119,17 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import SectionCard from '@/components/SectionCard.vue'
+import EmptyState from '@/components/EmptyState.vue'
+import { useToast } from '@/composables/useToast'
 import { createTask, fetchTasks } from '@/api/tasks'
 import { fetchGroups } from '@/api/groups'
+import { taskTypeLabels } from '@/utils/labels'
 import type { ClassTask, CourseSubject, Group, TaskStatus, TaskType } from '@/types'
 
 const tasks = ref<ClassTask[]>([])
 const groups = ref<Group[]>([])
-const message = ref('')
 const error = ref('')
+const toast = useToast()
 const filterGroupId = ref<number | undefined>(undefined)
 
 const form = reactive({
@@ -155,12 +160,7 @@ function subjectLabel(subject: CourseSubject) {
 }
 
 function taskTypeLabel(type: TaskType) {
-  const map: Record<TaskType, string> = {
-    observation: '观察记录',
-    experiment: '实验操作',
-    maintenance: '日常维护',
-  }
-  return `${type} - ${map[type]}`
+  return taskTypeLabels[type] ?? '—'
 }
 
 function groupName(groupId: number | null) {
@@ -172,23 +172,27 @@ async function loadGroups() {
   try {
     groups.value = await fetchGroups()
   } catch {
-    error.value = '小组列表加载失败。'
+    toast.error('小组列表加载失败')
   }
 }
 
 async function loadTasks() {
-  message.value = ''
-  error.value = ''
   try {
     tasks.value = await fetchTasks({ group_id: filterGroupId.value })
   } catch {
-    error.value = '任务列表加载失败。'
+    toast.error('任务列表加载失败')
   }
 }
 
 async function handleCreate() {
-  message.value = ''
-  error.value = ''
+  if (!form.title.trim()) {
+    toast.warning('请填写任务标题')
+    return
+  }
+  if (form.assigned_date && form.due_date && form.due_date < form.assigned_date) {
+    toast.warning('截止日期不能早于开始日期')
+    return
+  }
   try {
     await createTask({
       title: form.title,
@@ -200,7 +204,7 @@ async function handleCreate() {
       course_subject: form.course_subject,
       task_type: form.task_type,
     })
-    message.value = '任务创建成功'
+    toast.success('课堂任务已创建')
     form.title = ''
     form.description = ''
     form.assigned_date = ''
@@ -209,7 +213,7 @@ async function handleCreate() {
     form.group_id = null
     await loadTasks()
   } catch {
-    error.value = '任务创建失败，请确认字段有效。'
+    toast.error('任务创建失败，请检查填写内容')
   }
 }
 

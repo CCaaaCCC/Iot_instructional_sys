@@ -1,5 +1,5 @@
 import logging
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.models.component import Component
@@ -76,6 +76,8 @@ def toggle_rule(db: Session, rule: Rule) -> Rule:
 
 
 def delete_rule(db: Session, rule: Rule) -> None:
+    # rule_logs.rule_id 为非空外键，需先清理，避免 MySQL 外键约束导致删除失败
+    db.execute(delete(RuleLog).where(RuleLog.rule_id == rule.id))
     db.delete(rule)
     db.commit()
 

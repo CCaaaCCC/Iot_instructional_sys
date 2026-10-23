@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from app.models.enums import (
     UserRole, ComponentType, ComponentStatus, SensorMetric, RuleOperator, TaskStatus
 )
+from app.models.rule_log import RuleLog
 
 
 class TestHealthCheck:
@@ -324,6 +325,40 @@ class TestRulesAPI:
             "action": "on",
         }, headers=auth_headers)
         assert resp.status_code == 422
+
+    def test_delete_rule(self, client, auth_headers):
+        created = client.post("/api/v1/rules", json={
+            "name": "Delete Me Rule",
+            "metric": "air_temp",
+            "operator": ">",
+            "threshold": 40.0,
+            "action_component_type": "fan",
+            "action": "on",
+        }, headers=auth_headers)
+        assert created.status_code == 201
+        rule_id = created.json()["id"]
+
+        resp = client.delete(f"/api/v1/rules/{rule_id}", headers=auth_headers)
+        assert resp.status_code == 204
+        remaining = client.get("/api/v1/rules", headers=auth_headers).json()
+        assert all(item["id"] != rule_id for item in remaining)
+
+    def test_delete_rule_with_logs(self, client, auth_headers, db):
+        created = client.post("/api/v1/rules", json={
+            "name": "Rule With Logs",
+            "metric": "air_temp",
+            "operator": ">",
+            "threshold": 35.0,
+            "action_component_type": "fan",
+            "action": "on",
+        }, headers=auth_headers)
+        rule_id = created.json()["id"]
+        db.add(RuleLog(rule_id=rule_id, message="triggered"))
+        db.commit()
+
+        resp = client.delete(f"/api/v1/rules/{rule_id}", headers=auth_headers)
+        assert resp.status_code == 204
+        assert db.query(RuleLog).filter(RuleLog.rule_id == rule_id).count() == 0
 
     def test_update_rule(self, client, auth_headers):
         resp = client.patch("/api/v1/rules/1", json={

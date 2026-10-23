@@ -15,10 +15,21 @@
         </div>
       </template>
 
-      <div v-if="loading" class="loading-state">加载中...</div>
-      <div v-else-if="!overview" class="empty-state">
-        请选择班级查看驾驶舱数据
+      <div v-if="loading" class="grid" style="gap: 18px">
+        <div class="grid cards">
+          <div v-for="i in 4" :key="i" class="skeleton card"></div>
+        </div>
+        <div class="grid two-col">
+          <div class="skeleton card"></div>
+          <div class="skeleton card"></div>
+        </div>
       </div>
+      <EmptyState
+        v-else-if="!overview"
+        icon="chart"
+        title="请选择班级"
+        desc="选择班级后，这里会展示学情、小组排行与任务完成情况"
+      />
       <template v-else>
         <!-- KPI 卡片 -->
         <div class="grid cards" style="margin-bottom: 18px">
@@ -95,7 +106,7 @@
               </tr>
             </tbody>
           </table>
-          <div v-else class="empty-state">暂无小组数据</div>
+          <EmptyState v-else icon="sprout" title="暂无小组数据" desc="为该班级创建小组后即可查看排行" />
         </div>
 
         <!-- 任务完成情况 -->
@@ -140,7 +151,7 @@
               </tr>
             </tbody>
           </table>
-          <div v-else class="empty-state">暂无任务数据</div>
+          <EmptyState v-else icon="inbox" title="暂无任务数据" desc="为该班级发布任务后即可查看完成情况" />
         </div>
       </template>
     </SectionCard>
@@ -151,6 +162,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import SectionCard from '@/components/SectionCard.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import { fetchClassrooms } from '@/api/classrooms'
 import { fetchClassroomOverview } from '@/api/analytics'
 import { useTheme } from '@/composables/useTheme'

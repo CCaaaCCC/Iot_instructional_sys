@@ -1,6 +1,9 @@
 <template>
   <div class="content-area">
-    <div v-if="loading" class="loading-state">加载中...</div>
+    <div v-if="loading" class="content-area">
+      <div class="skeleton card"></div>
+      <div class="skeleton card"></div>
+    </div>
     <div v-else-if="error" class="msg-error" style="margin-bottom: 12px">{{ error }}</div>
     <template v-else>
       <section class="content-card">
@@ -14,29 +17,40 @@
           <div class="sensor-item">
             <div class="sensor-label">气温</div>
             <div class="sensor-value">{{ latest.air_temp?.toFixed(1) ?? '--' }}°C</div>
+            <div class="sensor-hint">{{ comfortTemp(latest.air_temp) }}</div>
           </div>
           <div class="sensor-item">
             <div class="sensor-label">空气湿度</div>
             <div class="sensor-value">{{ latest.air_humidity?.toFixed(1) ?? '--' }}%</div>
+            <div class="sensor-hint">{{ comfortHumidity(latest.air_humidity) }}</div>
           </div>
           <div class="sensor-item">
             <div class="sensor-label">土壤湿度</div>
             <div class="sensor-value">{{ latest.soil_humidity?.toFixed(1) ?? '--' }}%</div>
+            <div class="sensor-hint">{{ comfortSoil(latest.soil_humidity) }}</div>
           </div>
           <div class="sensor-item">
             <div class="sensor-label">光照强度</div>
             <div class="sensor-value">{{ latest.light_intensity?.toFixed(0) ?? '--' }} lux</div>
+            <div class="sensor-hint">{{ comfortLight(latest.light_intensity) }}</div>
           </div>
           <div class="sensor-item">
             <div class="sensor-label">土壤pH</div>
             <div class="sensor-value">{{ latest.soil_ph?.toFixed(1) ?? '--' }}</div>
+            <div class="sensor-hint">{{ comfortPh(latest.soil_ph) }}</div>
           </div>
           <div class="sensor-item">
             <div class="sensor-label">CO₂浓度</div>
             <div class="sensor-value">{{ latest.co2?.toFixed(0) ?? '--' }} ppm</div>
+            <div class="sensor-hint">{{ comfortCo2(latest.co2) }}</div>
           </div>
         </div>
-        <div v-else class="empty-state">本组设备暂无传感器数据</div>
+        <EmptyState
+          v-else
+          icon="chart"
+          title="本组设备暂无传感器数据"
+          desc="设备上报后，这里会显示大棚的实时环境"
+        />
       </section>
 
       <section class="content-card">
@@ -56,11 +70,11 @@
             {{ m.label }}
           </button>
         </div>
-        <div v-if="chartLoading" class="loading-state">图表加载中...</div>
+        <div v-if="chartLoading" class="skeleton card"></div>
         <div v-else-if="echartsData && echartsData.x.length > 0">
           <LineChart :data="echartsData" />
         </div>
-        <div v-else class="empty-state">暂无图表数据</div>
+        <EmptyState v-else icon="chart" title="暂无图表数据" desc="等待设备上报更多环境数据" />
       </section>
 
       <section class="content-card">
@@ -68,7 +82,7 @@
           <h2 class="card-title">历史数据</h2>
           <span class="badge muted">最近 {{ history.length }} 条</span>
         </div>
-        <div v-if="history.length === 0" class="empty-state">暂无历史数据</div>
+        <EmptyState v-if="history.length === 0" icon="inbox" title="暂无历史数据" desc="设备上报后，历史记录会显示在这里" />
         <div v-else class="table-wrapper">
           <table class="data-table">
             <thead>
@@ -103,6 +117,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import LineChart from '@/components/LineChart.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import { fetchMyLatestSensorData, fetchMySensorData, fetchMySensorECharts } from '@/api/student'
 import { useWebSocket } from '@/composables/useWebSocket'
 import type { EChartsResponse, SensorData, SensorMetric } from '@/types'
@@ -134,6 +149,48 @@ const history = ref<SensorData[]>([])
 const echartsData = ref<EChartsResponse | null>(null)
 const error = ref('')
 const selectedMetrics = ref<SensorMetric[]>(allMetrics.map((m) => m.value))
+
+function comfortTemp(value: number | null | undefined): string {
+  if (value == null) return '暂无读数'
+  if (value < 15) return '偏凉，植物长得慢'
+  if (value <= 28) return '很舒适'
+  return '偏热，注意通风'
+}
+
+function comfortHumidity(value: number | null | undefined): string {
+  if (value == null) return '暂无读数'
+  if (value < 40) return '偏干'
+  if (value <= 70) return '很舒适'
+  return '偏湿，注意通风'
+}
+
+function comfortSoil(value: number | null | undefined): string {
+  if (value == null) return '暂无读数'
+  if (value < 30) return '偏干，可能需要浇水'
+  if (value <= 60) return '湿度刚好'
+  return '偏湿，小心烂根'
+}
+
+function comfortLight(value: number | null | undefined): string {
+  if (value == null) return '暂无读数'
+  if (value < 300) return '有点暗'
+  if (value <= 800) return '光照充足'
+  return '偏强，注意遮阴'
+}
+
+function comfortPh(value: number | null | undefined): string {
+  if (value == null) return '暂无读数'
+  if (value < 5.5) return '偏酸'
+  if (value <= 7) return '酸碱适宜'
+  return '偏碱'
+}
+
+function comfortCo2(value: number | null | undefined): string {
+  if (value == null) return '暂无读数'
+  if (value < 400) return '偏低'
+  if (value <= 800) return '浓度适宜'
+  return '偏高，注意通风'
+}
 
 function formatTime(iso: string): string {
   const d = new Date(iso)

@@ -36,8 +36,7 @@
           <button class="btn primary">创建作物</button>
         </div>
       </form>
-      <div v-if="message" class="msg-success">{{ message }}</div>
-      <div v-if="error" class="msg-error">{{ error }}</div>
+
     </SectionCard>
 
     <SectionCard>
@@ -68,9 +67,12 @@
           </tr>
         </tbody>
       </table>
-      <div v-if="!crops.length" class="empty-state">
-        暂无作物数据
-      </div>
+      <EmptyState
+        v-if="!crops.length"
+        icon="leaf"
+        title="暂无作物档案"
+        desc="在上方登记第一株作物，记录它的生长旅程"
+      />
     </SectionCard>
   </div>
 </template>
@@ -78,26 +80,32 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import SectionCard from '@/components/SectionCard.vue'
+import EmptyState from '@/components/EmptyState.vue'
+import { useToast } from '@/composables/useToast'
 import { createCrop, fetchCrops } from '@/api/crops'
 import type { Crop } from '@/types'
 
 const crops = ref<Crop[]>([])
 const form = reactive({ name: '', description: '', growth_stage: '', start_date: '', end_date: '', notes: '' })
-const message = ref('')
-const error = ref('')
+const toast = useToast()
 
 async function loadCrops() {
-  error.value = ''
   try {
     crops.value = await fetchCrops()
   } catch {
-    error.value = '作物列表加载失败。'
+    toast.error('作物列表加载失败')
   }
 }
 
 async function handleCreate() {
-  message.value = ''
-  error.value = ''
+  if (!form.name.trim()) {
+    toast.warning('请填写作物名称')
+    return
+  }
+  if (form.start_date && form.end_date && form.end_date < form.start_date) {
+    toast.warning('结束日期不能早于开始日期')
+    return
+  }
   try {
     await createCrop({
       ...form,
@@ -107,7 +115,7 @@ async function handleCreate() {
       end_date: form.end_date || null,
       notes: form.notes || null,
     })
-    message.value = '作物创建成功'
+    toast.success('作物档案已创建')
     form.name = ''
     form.description = ''
     form.growth_stage = ''
@@ -116,7 +124,7 @@ async function handleCreate() {
     form.notes = ''
     await loadCrops()
   } catch {
-    error.value = '作物创建失败，请确认字段有效。'
+    toast.error('作物创建失败，请检查填写内容')
   }
 }
 

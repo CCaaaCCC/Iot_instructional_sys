@@ -1,6 +1,9 @@
 <template>
   <div class="content-area">
-    <div v-if="loading" class="loading-state">加载中...</div>
+    <div v-if="loading" class="content-area">
+      <div class="skeleton card"></div>
+      <div class="skeleton card"></div>
+    </div>
     <div v-else-if="error" class="msg-error" style="margin-bottom: 12px">{{ error }}</div>
     <template v-else>
       <section class="content-card profile-hero">
@@ -36,8 +39,8 @@
           </label>
         </div>
         <div class="form-actions">
-          <button class="btn primary" :disabled="profileForm.loading" @click="handleSaveProfile">
-            {{ profileForm.loading ? '保存中...' : '保存昵称' }}
+          <button :class="['btn', 'primary', { loading: profileForm.loading }]" :disabled="profileForm.loading" @click="handleSaveProfile">
+            保存昵称
           </button>
         </div>
       </section>
@@ -61,10 +64,10 @@
           </label>
         </div>
         <div v-if="passwordForm.error" class="msg-error" style="margin-top: 8px">{{ passwordForm.error }}</div>
-        <div v-if="passwordForm.success" class="msg-success" style="margin-top: 8px">{{ passwordForm.success }}</div>
+
         <div class="form-actions">
-          <button class="btn primary" :disabled="passwordForm.loading" @click="handleChangePassword">
-            {{ passwordForm.loading ? '修改中...' : '修改密码' }}
+          <button :class="['btn', 'primary', { loading: passwordForm.loading }]" :disabled="passwordForm.loading" @click="handleChangePassword">
+            修改密码
           </button>
         </div>
       </section>
@@ -117,10 +120,12 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { fetchMyGroup, fetchMySubmissions, fetchMyTasks, updateMyProfile, changeMyPassword, uploadMyAvatar } from '@/api/student'
 import { fetchMyAnalytics } from '@/api/analytics'
+import { useToast } from '@/composables/useToast'
 import type { ClassTask, Group, TaskSubmission, StudentAnalyticsSummary } from '@/types'
 
 const auth = useAuthStore()
 const loading = ref(true)
+const toast = useToast()
 const error = ref('')
 const group = ref<Group | null>(null)
 const tasks = ref<ClassTask[]>([])
@@ -179,7 +184,7 @@ async function handleAvatarUpload(event: Event) {
   const file = input.files?.[0]
   if (!file) return
   if (file.size > 2 * 1024 * 1024) {
-    alert('头像文件不能超过 2MB')
+    toast.warning('头像文件不能超过 2MB')
     input.value = ''
     return
   }
@@ -187,9 +192,10 @@ async function handleAvatarUpload(event: Event) {
     const result = await uploadMyAvatar(file)
     auth.updateProfile({ avatar_url: result.avatar_url })
     avatarError.value = false
+    toast.success('头像已更新')
   } catch (err) {
     console.error('Failed to upload avatar:', err)
-    alert('头像上传失败，请检查文件格式（仅支持 jpg/png/webp）')
+    toast.error('头像上传失败，仅支持 jpg/png/webp 格式')
   }
   input.value = ''
 }
@@ -197,16 +203,17 @@ async function handleAvatarUpload(event: Event) {
 async function handleSaveProfile() {
   const name = profileForm.displayName.trim()
   if (!name) {
-    alert('昵称不能为空')
+    toast.warning('昵称不能为空')
     return
   }
   profileForm.loading = true
   try {
     const updated = await updateMyProfile({ display_name: name })
     auth.updateProfile({ display_name: updated.display_name })
+    toast.success('个人资料已保存')
   } catch (err) {
     console.error('Failed to update profile:', err)
-    alert('保存失败，请重试')
+    toast.error('保存失败，请稍后重试')
   } finally {
     profileForm.loading = false
   }
@@ -239,6 +246,7 @@ async function handleChangePassword() {
   try {
     await changeMyPassword(passwordForm.oldPassword, passwordForm.newPassword)
     passwordForm.success = '密码修改成功，下次请使用新密码登录'
+    toast.success('密码已修改')
     passwordForm.oldPassword = ''
     passwordForm.newPassword = ''
     passwordForm.confirmPassword = ''

@@ -20,7 +20,6 @@
           <button class="btn primary">创建节点</button>
         </div>
       </form>
-      <div v-if="message" class="msg-success">{{ message }}</div>
       <div v-if="error" class="msg-error">{{ error }}</div>
     </SectionCard>
 
@@ -42,9 +41,12 @@
         </div>
       </template>
 
-      <div v-if="!nodes.length" class="empty-state">
-        暂无设备节点
-      </div>
+      <EmptyState
+        v-if="!nodes.length"
+        icon="sprout"
+        title="暂无设备节点"
+        desc="在上方填写节点名称，接入第一台 ESP32 设备"
+      />
 
       <div v-else class="grid" style="gap: 14px">
         <div v-for="node in nodes" :key="node.id" class="node-card" :class="{ offline: !node.online }">
@@ -129,21 +131,21 @@
         <label>
           <div class="form-label">组件类型</div>
           <select v-model="componentForm.type" class="select">
-            <option value="fan">fan - 风扇</option>
-            <option value="pump">pump - 水泵</option>
-            <option value="light">light - 补光灯</option>
-            <option value="sensor">sensor - 传感器</option>
+            <option value="fan">风扇</option>
+            <option value="pump">水泵</option>
+            <option value="light">补光灯</option>
+            <option value="sensor">传感器</option>
           </select>
         </label>
         <label v-if="componentForm.type === 'sensor'">
           <div class="form-label">监控指标</div>
           <select v-model="componentForm.metric" class="select">
-            <option value="air_temp">air_temp - 空气温度</option>
-            <option value="air_humidity">air_humidity - 空气湿度</option>
-            <option value="soil_humidity">soil_humidity - 土壤湿度</option>
-            <option value="light_intensity">light_intensity - 光照强度</option>
-            <option value="soil_ph">soil_ph - 土壤pH</option>
-            <option value="co2">co2 - CO₂浓度</option>
+            <option value="air_temp">空气温度</option>
+            <option value="air_humidity">空气湿度</option>
+            <option value="soil_humidity">土壤湿度</option>
+            <option value="light_intensity">光照强度</option>
+            <option value="soil_ph">土壤 pH</option>
+            <option value="co2">CO₂ 浓度</option>
           </select>
         </label>
         <div style="display:flex;align-items:flex-end;gap:8px">
@@ -253,6 +255,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue'
 import SectionCard from '@/components/SectionCard.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import {
   controlComponent,
   createComponent,
@@ -270,6 +273,8 @@ import {
 } from '@/api/device_tokens'
 import { fetchGroups } from '@/api/groups'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { useConfirm } from '@/composables/useConfirm'
+import { useToast } from '@/composables/useToast'
 import type {
   Component,
   ComponentStatus,
@@ -282,12 +287,13 @@ import type {
 } from '@/types'
 
 const { connected, componentUpdates, deviceStatuses } = useWebSocket()
+const confirm = useConfirm()
+const toast = useToast()
 
 const nodes = ref<DeviceNode[]>([])
 const componentsMap = ref<Record<number, Component[]>>({})
 const expandedNodeId = ref<number | null>(null)
 const showComponentForm = ref(false)
-const message = ref('')
 const error = ref('')
 
 const nodeForm = reactive({ name: '', location: '' })
@@ -321,7 +327,7 @@ function componentTypeLabel(type: ComponentType) {
     light: '补光灯',
     sensor: '传感器',
   }
-  return `${type} - ${map[type]}`
+  return map[type]
 }
 
 function statusClass(status: ComponentStatus) {
@@ -345,7 +351,6 @@ function getComponents(nodeId: number) {
 }
 
 async function loadNodes() {
-  message.value = ''
   error.value = ''
   try {
     const params: { online?: boolean } = {}
@@ -379,31 +384,36 @@ async function toggleExpand(nodeId: number) {
 }
 
 async function handleCreateNode() {
-  message.value = ''
   error.value = ''
   try {
     await createNode({
       name: nodeForm.name,
       location: nodeForm.location || undefined,
     })
-    message.value = '节点创建成功'
+    toast.success('设备节点已创建')
     nodeForm.name = ''
     nodeForm.location = ''
     await loadNodes()
   } catch {
-    error.value = '节点创建失败，请确认名称唯一并检查后端状态。'
+    toast.error('节点创建失败，请检查名称是否重复')
   }
 }
 
 async function handleDeleteNode(nodeId: number) {
-  if (!confirm(`确认删除节点 #${nodeId}？此操作将一并移除其下所有组件。`)) return
+  const ok = await confirm({
+    title: '删除设备节点',
+    message: `删除节点 #${nodeId} 后，其下所有组件与历史数据将无法恢复。`,
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!ok) return
   try {
     await deleteNode(nodeId)
-    message.value = '节点已删除'
+    toast.success('设备节点已删除')
     if (expandedNodeId.value === nodeId) expandedNodeId.value = null
     await loadNodes()
   } catch {
-    error.value = '节点删除失败。'
+    toast.error('删除失败，请稍后重试')
   }
 }
 
@@ -416,7 +426,6 @@ function openComponentForm(nodeId: number) {
 }
 
 async function handleCreateComponent() {
-  message.value = ''
   error.value = ''
   try {
     const payload: { name: string; type: ComponentType; metric?: string } = {
@@ -427,22 +436,22 @@ async function handleCreateComponent() {
       payload.metric = componentForm.metric
     }
     await createComponent(componentForm.node_id, payload)
-    message.value = '组件创建成功'
+    toast.success('组件已创建')
     showComponentForm.value = false
     componentsMap.value[componentForm.node_id] = await fetchComponents(componentForm.node_id)
   } catch {
-    error.value = '组件创建失败，请确认字段有效。'
+    toast.error('组件创建失败，请检查填写内容')
   }
 }
 
 async function handleControl(nodeId: number, componentId: number, action: ComponentStatus) {
-  message.value = ''
   error.value = ''
   try {
     await controlComponent(nodeId, componentId, { action, message: `前端控制组件为 ${action}` })
     componentsMap.value[nodeId] = await fetchComponents(nodeId)
+    toast.success(`已切换为${statusLabel(action)}`)
   } catch {
-    error.value = '组件控制失败，请确认后端已连接。'
+    toast.error('控制指令发送失败，请确认设备连接')
   }
 }
 
@@ -466,10 +475,8 @@ async function loadDeviceTokens() {
 }
 
 async function handleCreateToken() {
-  message.value = ''
-  error.value = ''
   if (!tokenForm.device_name.trim()) {
-    error.value = '请输入设备名称'
+    toast.warning('请先填写设备名称')
     return
   }
   try {
@@ -480,60 +487,72 @@ async function handleCreateToken() {
       node_id: tokenForm.node_id,
     })
     revealedToken.value = result.token
-    message.value = '令牌签发成功，请立即复制保存'
+    toast.success('令牌已签发，请立即复制保存')
     tokenForm.device_name = ''
     await loadDeviceTokens()
   } catch (e: any) {
-    error.value = e?.response?.data?.detail || '令牌签发失败，可能该组已有同类型设备令牌。'
+    toast.error(e?.response?.data?.detail || '令牌签发失败，该组可能已有同类型令牌')
   }
 }
 
 async function handleResetToken(tokenId: number) {
-  if (!confirm(`确认重置令牌 #${tokenId}？旧令牌将立即失效。`)) return
-  message.value = ''
-  error.value = ''
+  const ok = await confirm({
+    title: '重置设备令牌',
+    message: `重置后，令牌 #${tokenId} 的旧令牌将立即失效，需要重新配置设备。`,
+    confirmText: '重置',
+    danger: true,
+  })
+  if (!ok) return
   try {
     const result = await resetDeviceToken(tokenId)
     revealedToken.value = result.token
-    message.value = '令牌已重置，请立即复制新令牌'
+    toast.success('令牌已重置，请复制新令牌')
     await loadDeviceTokens()
   } catch {
-    error.value = '令牌重置失败。'
+    toast.error('令牌重置失败，请稍后重试')
   }
 }
 
 async function handleRevokeToken(tokenId: number) {
-  if (!confirm(`确认吊销令牌 #${tokenId}？设备将无法再访问接口。`)) return
-  message.value = ''
-  error.value = ''
+  const ok = await confirm({
+    title: '吊销设备令牌',
+    message: `吊销后，令牌 #${tokenId} 对应的设备将无法继续访问接口。`,
+    confirmText: '吊销',
+    danger: true,
+  })
+  if (!ok) return
   try {
     await revokeDeviceToken(tokenId)
-    message.value = '令牌已吊销'
+    toast.success('令牌已吊销')
     await loadDeviceTokens()
   } catch {
-    error.value = '令牌吊销失败。'
+    toast.error('令牌吊销失败，请稍后重试')
   }
 }
 
 async function handleDeleteToken(tokenId: number) {
-  if (!confirm(`确认彻底删除令牌 #${tokenId}？此操作不可恢复。`)) return
-  message.value = ''
-  error.value = ''
+  const ok = await confirm({
+    title: '彻底删除令牌',
+    message: `令牌 #${tokenId} 的记录将被永久删除，此操作不可恢复。`,
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!ok) return
   try {
     await removeDeviceToken(tokenId)
-    message.value = '令牌已删除'
+    toast.success('令牌已删除')
     await loadDeviceTokens()
   } catch {
-    error.value = '令牌删除失败（仅管理员可删除）。'
+    toast.error('令牌删除失败（仅管理员可删除）')
   }
 }
 
 async function copyToken(token: string) {
   try {
     await navigator.clipboard.writeText(token)
-    message.value = '令牌已复制到剪贴板'
+    toast.success('令牌已复制到剪贴板')
   } catch {
-    error.value = '复制失败，请手动选择文本复制。'
+    toast.error('复制失败，请手动选择文本复制')
   }
 }
 

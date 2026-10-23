@@ -1,9 +1,16 @@
 <template>
   <div class="content-area">
-    <div v-if="loading" class="loading-state">加载中...</div>
+    <div v-if="loading" class="content-area">
+      <div v-for="i in 3" :key="i" class="skeleton card"></div>
+    </div>
     <div v-else-if="error" class="msg-error" style="margin-bottom: 12px">{{ error }}</div>
     <template v-else>
-      <div v-if="experiments.length === 0" class="empty-state">老师还没有创建实验项目</div>
+      <EmptyState
+        v-if="experiments.length === 0"
+        icon="flask"
+        title="老师还没有创建实验项目"
+        desc="实验开始后，你可以在这里记录观察数据"
+      />
       <div v-else class="task-list-vertical">
         <article v-for="exp in experiments" :key="exp.id" class="content-card task-card">
           <div class="task-card-header">
@@ -103,7 +110,7 @@
                     </tr>
                   </tbody>
                 </table>
-                <div v-else class="empty-state" style="padding:12px">暂无观察记录</div>
+                <EmptyState v-else compact icon="leaf" title="暂无观察记录" />
               </div>
             </div>
           </div>
@@ -115,6 +122,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import EmptyState from '@/components/EmptyState.vue'
 import { fetchMyExperiments, fetchMyExperimentGroup, fetchMyExperimentObservations, createMyExperimentObservation } from '@/api/student'
 import type { Experiment, ExperimentGroup, ExperimentObservation, SensorMetric } from '@/types'
 

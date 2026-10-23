@@ -1,6 +1,12 @@
 <template>
   <div class="content-area">
-    <div v-if="loading" class="loading-state">加载中...</div>
+    <div v-if="loading" class="content-area">
+      <div class="skeleton card"></div>
+      <div class="grid cards">
+        <div v-for="i in 4" :key="i" class="skeleton card"></div>
+      </div>
+      <div class="skeleton card"></div>
+    </div>
     <div v-else-if="error" class="msg-error" style="margin-bottom: 12px">{{ error }}</div>
     <template v-else>
       <section class="content-card profile-greeting">
@@ -9,7 +15,7 @@
           <span :style="auth.user?.avatar_url ? 'display: none' : ''">{{ (auth.user?.display_name || auth.user?.username || '?').charAt(0).toUpperCase() }}</span>
         </div>
         <div class="greeting-text">
-          <h2 class="greeting-title">你好，{{ auth.user?.display_name || auth.user?.username || '同学' }}！</h2>
+          <h2 class="greeting-title">{{ greeting }}，{{ auth.user?.display_name || auth.user?.username || '同学' }}！</h2>
           <p class="greeting-subtitle">欢迎来到智慧大棚学习平台，继续探索植物的奥秘吧</p>
         </div>
       </section>
@@ -77,7 +83,12 @@
             <div class="sensor-value">{{ latestSensor.co2?.toFixed(0) ?? '--' }} ppm</div>
           </div>
         </div>
-        <div v-else class="empty-state">本组设备暂无传感器数据</div>
+        <EmptyState
+          v-else
+          icon="chart"
+          title="本组设备暂无传感器数据"
+          desc="设备上报后，这里会实时显示大棚环境"
+        />
       </section>
 
       <section class="content-card">
@@ -85,7 +96,12 @@
           <h2 class="card-title">待办任务</h2>
           <RouterLink :to="{ name: 'student-tasks' }" class="btn ghost sm">查看全部</RouterLink>
         </div>
-        <div v-if="pendingTasks.length === 0" class="empty-state">暂无待办任务</div>
+        <EmptyState
+          v-if="pendingTasks.length === 0"
+          icon="sprout"
+          title="太棒了，任务都完成啦"
+          desc="去环境数据看看，或者等老师布置新任务"
+        />
         <div v-else class="task-list">
           <div v-for="task in pendingTasks.slice(0, 3)" :key="task.id" class="task-row">
             <div class="task-info">
@@ -106,6 +122,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import EmptyState from '@/components/EmptyState.vue'
+import { taskTypeLabels } from '@/utils/labels'
 import { fetchMyGroup, fetchMyTasks, fetchMySubmissions, fetchMyLatestSensorData } from '@/api/student'
 import type { ClassTask, Group, SensorData, TaskSubmission, TaskType } from '@/types'
 
@@ -121,11 +139,12 @@ const pendingTasks = computed(() =>
   tasks.value.filter((t) => t.status === 'pending' || t.status === 'in_progress'),
 )
 
-const taskTypeLabels: Record<TaskType, string> = {
-  observation: '观察',
-  experiment: '实验',
-  maintenance: '维护',
-}
+const greeting = computed(() => {
+  const hour = new Date().getHours()
+  if (hour < 11) return '早上好'
+  if (hour < 18) return '下午好'
+  return '晚上好'
+})
 
 function taskTypeLabel(type: TaskType | null): string {
   return type ? taskTypeLabels[type] : ''

@@ -41,10 +41,13 @@
           </tr>
         </tbody>
       </table>
-      <div v-else-if="!loadingStudents" class="empty-state">
-        暂无学生数据
-      </div>
-      <div v-else class="loading-state">加载中...</div>
+      <EmptyState
+        v-else-if="!loadingStudents"
+        icon="chart"
+        title="暂无学生数据"
+        desc="创建学生账号并提交作业后，这里会生成学习画像"
+      />
+      <SkeletonTable v-else :rows="5" :cols="5" />
     </SectionCard>
 
     <!-- Student detail -->
@@ -56,9 +59,8 @@
             <div class="card-subtitle">学习行为统计分析</div>
           </div>
           <div class="toolbar">
-            <button class="btn primary sm" :disabled="exporting" @click="handleExportPdf">
-              <span v-if="exporting">导出中...</span>
-              <span v-else>导出成长档案 PDF</span>
+            <button :class="['btn', 'primary', 'sm', { loading: exporting }]" :disabled="exporting" @click="handleExportPdf">
+              导出成长档案 PDF
             </button>
           </div>
         </template>
@@ -103,9 +105,7 @@
               <span v-if="act.score !== null" class="badge success">{{ act.score }}分</span>
             </div>
           </div>
-          <div v-else class="empty-state" style="padding:20px">
-            暂无活动记录
-          </div>
+          <EmptyState v-else icon="leaf" title="暂无活动记录" desc="学生提交或批阅后会生成活动记录" />
         </div>
       </SectionCard>
     </template>
@@ -116,6 +116,9 @@
 import { onMounted, ref } from 'vue'
 import SectionCard from '@/components/SectionCard.vue'
 import LineChart from '@/components/LineChart.vue'
+import EmptyState from '@/components/EmptyState.vue'
+import SkeletonTable from '@/components/SkeletonTable.vue'
+import { useToast } from '@/composables/useToast'
 import {
   fetchStudentsStats,
   fetchStudentAnalytics,
@@ -159,6 +162,8 @@ async function selectStudent(studentId: number) {
   }
 }
 
+const toast = useToast()
+
 async function handleExportPdf() {
   if (selectedId.value === null) return
   exporting.value = true
@@ -175,9 +180,10 @@ async function handleExportPdf() {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+    toast.success('成长档案已导出')
   } catch (err) {
     console.error('PDF 导出失败', err)
-    alert('PDF 导出失败，请重试')
+    toast.error('PDF 导出失败，请稍后重试')
   } finally {
     exporting.value = false
   }

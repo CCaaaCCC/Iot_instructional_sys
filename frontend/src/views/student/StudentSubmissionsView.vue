@@ -1,16 +1,23 @@
 <template>
   <div class="content-area">
-    <div v-if="loading" class="loading-state">加载中...</div>
+    <div v-if="loading" class="content-area">
+      <div v-for="i in 3" :key="i" class="skeleton card"></div>
+    </div>
     <div v-else-if="error" class="msg-error" style="margin-bottom: 12px">{{ error }}</div>
     <template v-else>
-      <div v-if="submissions.length === 0" class="empty-state">你还没有提交过作业</div>
+      <EmptyState
+        v-if="submissions.length === 0"
+        icon="leaf"
+        title="你还没有提交过作业"
+        desc="完成老师布置的任务后，提交记录会出现在这里"
+      />
       <div v-else class="submission-list">
         <article v-for="sub in submissions" :key="sub.id" class="content-card submission-card">
           <div class="card-header">
             <h2 class="card-title">作业 #{{ sub.id }}</h2>
             <div class="submission-badges">
-              <span v-if="sub.score !== null" class="badge success">{{ sub.score }}分</span>
-              <span v-else class="badge warning">待批阅</span>
+              <span v-if="sub.score !== null" class="score-pill" :class="scoreTone(sub.score)">{{ sub.score }} 分</span>
+              <span v-else class="badge warning"><span class="badge-dot"></span> 待批阅</span>
             </div>
           </div>
 
@@ -73,6 +80,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import EmptyState from '@/components/EmptyState.vue'
 import { fetchMySubmissions } from '@/api/student'
 import type { SubmissionFile, TaskSubmission } from '@/types'
 
@@ -80,6 +88,12 @@ const loading = ref(true)
 const submissions = ref<TaskSubmission[]>([])
 const error = ref('')
 const previewFile = ref<SubmissionFile | null>(null)
+
+function scoreTone(score: number): string {
+  if (score >= 90) return 'high'
+  if (score >= 60) return 'mid'
+  return 'low'
+}
 
 function formatTime(iso: string): string {
   const d = new Date(iso)

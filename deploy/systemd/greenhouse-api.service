@@ -1,0 +1,19 @@
+[Unit]
+Description=Smart Greenhouse API
+After=network.target mysql.service mosquitto.service
+Wants=mysql.service mosquitto.service
+
+[Service]
+Type=simple
+User=__APP_USER__
+Group=__APP_USER__
+WorkingDirectory=__APP_DIR__
+Environment="PATH=__APP_DIR__/.venv/bin"
+ExecStart=__APP_DIR__/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001 --workers 1
+Restart=always
+RestartSec=5
+# 2G 内存保护：限制后端最大内存，防止拖垮 MySQL
+MemoryMax=700M
+
+[Install]
+WantedBy=multi-user.target

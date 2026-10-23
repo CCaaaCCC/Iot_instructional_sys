@@ -52,9 +52,12 @@
 
       <div v-if="logsError" class="msg-error">{{ logsError }}</div>
 
-      <div v-if="!logs.length" class="empty-state">
-        暂无调用日志，等待小智 AI 发起工具调用
-      </div>
+      <EmptyState
+        v-if="!logs.length"
+        icon="inbox"
+        title="暂无调用日志"
+        desc="小智 AI 发起工具调用后，这里会记录参数、结果与耗时"
+      />
 
       <table v-else class="table">
         <thead>
@@ -131,8 +134,12 @@
         </div>
 
         <div class="form-row">
-          <button class="btn primary" :disabled="!trial.tokenStr || !trial.toolName || trial.loading" @click="executeTrial">
-            {{ trial.loading ? '调用中...' : '执行调用' }}
+          <button
+            :class="['btn', 'primary', { loading: trial.loading }]"
+            :disabled="!trial.tokenStr || !trial.toolName || trial.loading"
+            @click="executeTrial"
+          >
+            执行调用
           </button>
         </div>
 
@@ -150,6 +157,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import SectionCard from '@/components/SectionCard.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import { fetchMcpLogs, callMcpTool } from '@/api/mcp'
 import { fetchGroups } from '@/api/groups'
 import { useAuthStore } from '@/stores/auth'

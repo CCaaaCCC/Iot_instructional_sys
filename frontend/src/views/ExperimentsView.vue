@@ -57,8 +57,7 @@
           <button class="btn primary">创建实验</button>
         </div>
       </form>
-      <div v-if="message" class="msg-success">{{ message }}</div>
-      <div v-if="error" class="msg-error">{{ error }}</div>
+
     </SectionCard>
 
     <SectionCard>
@@ -106,9 +105,12 @@
           </tr>
         </tbody>
       </table>
-      <div v-if="!experiments.length" class="empty-state">
-        暂无实验数据
-      </div>
+      <EmptyState
+        v-if="!experiments.length"
+        icon="flask"
+        title="暂无实验"
+        desc="在上方填写实验标题与假设，创建第一个科学实验"
+      />
     </SectionCard>
 
     <Teleport to="body">
@@ -191,7 +193,7 @@
                   </tr>
                 </tbody>
               </table>
-              <div v-if="!detail.groups.length" class="empty-state" style="padding:12px">暂无小组参与</div>
+              <EmptyState v-if="!detail.groups.length" compact icon="sprout" title="暂无小组参与" />
             </div>
 
             <div style="margin-top: 20px; border-top: 1px solid var(--line); padding-top: 16px">
@@ -209,7 +211,7 @@
                   </tr>
                 </tbody>
               </table>
-              <div v-else class="empty-state" style="padding:12px">暂无观察记录</div>
+              <EmptyState v-else compact icon="leaf" title="暂无观察记录" />
             </div>
           </div>
         </div>
@@ -221,6 +223,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import SectionCard from '@/components/SectionCard.vue'
+import EmptyState from '@/components/EmptyState.vue'
+import { useConfirm } from '@/composables/useConfirm'
+import { useToast } from '@/composables/useToast'
 import { createExperiment, deleteExperiment, fetchExperiments, updateExperiment, fetchExperimentGroups, addExperimentGroup, removeExperimentGroup, fetchObservations } from '@/api/experiments'
 import { fetchClassrooms } from '@/api/classrooms'
 import { fetchGroups } from '@/api/groups'
@@ -229,9 +234,9 @@ import type { Classroom, Experiment, ExperimentGroup, ExperimentObservation, Exp
 const experiments = ref<Experiment[]>([])
 const classrooms = ref<Classroom[]>([])
 const groups = ref<Group[]>([])
-const message = ref('')
-const error = ref('')
 const filterClassId = ref<number | undefined>(undefined)
+const confirm = useConfirm()
+const toast = useToast()
 
 const form = reactive({
   title: '',
@@ -293,23 +298,31 @@ async function loadData() {
     groups.value = g
     await loadExperiments()
   } catch {
-    error.value = '数据加载失败。'
+    toast.error('基础数据加载失败')
   }
 }
 
 async function loadExperiments() {
-  message.value = ''
-  error.value = ''
   try {
     experiments.value = await fetchExperiments({ class_id: filterClassId.value })
   } catch {
-    error.value = '实验列表加载失败。'
+    toast.error('实验列表加载失败')
   }
 }
 
 async function handleCreate() {
-  message.value = ''
-  error.value = ''
+  if (!form.title.trim()) {
+    toast.warning('请填写实验标题')
+    return
+  }
+  if (!form.class_id) {
+    toast.warning('请选择所属班级')
+    return
+  }
+  if (!form.start_date || !form.end_date) {
+    toast.warning('请填写实验起止日期')
+    return
+  }
   try {
     await createExperiment({
       title: form.title,
@@ -321,7 +334,7 @@ async function handleCreate() {
       status: form.status,
       conclusion: form.conclusion || null,
     })
-    message.value = '实验创建成功'
+    toast.success('实验已创建')
     form.title = ''
     form.hypothesis = ''
     form.start_date = ''
@@ -329,17 +342,24 @@ async function handleCreate() {
     form.conclusion = ''
     await loadExperiments()
   } catch {
-    error.value = '实验创建失败，请确认字段有效。'
+    toast.error('实验创建失败，请检查填写内容')
   }
 }
 
 async function handleDelete(exp: Experiment) {
-  if (!confirm(`确定删除实验「${exp.title}」吗？关联的小组和观察记录也将被删除。`)) return
+  const ok = await confirm({
+    title: '删除实验',
+    message: `「${exp.title}」以及关联的小组和观察记录都将被删除。`,
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!ok) return
   try {
     await deleteExperiment(exp.id)
+    toast.success('实验已删除')
     await loadExperiments()
   } catch {
-    error.value = '删除失败。'
+    toast.error('删除失败，请稍后重试')
   }
 }
 
@@ -407,6 +427,13 @@ async function addGroup() {
 
 async function removeGroup(groupId: number) {
   if (!detail.exp) return
+  const ok = await confirm({
+    title: '移出实验小组',
+    message: `确定将「${groupName(groupId)}」从该实验中移除吗？`,
+    confirmText: '移除',
+    danger: true,
+  })
+  if (!ok) return
   try {
     await removeExperimentGroup(detail.exp.id, groupId)
     detail.groups = detail.groups.filter(g => g.group_id !== groupId)

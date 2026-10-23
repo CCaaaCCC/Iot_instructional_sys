@@ -62,17 +62,32 @@
       </nav>
 
       <div class="sidebar-footer" v-if="auth.user">
-        <div class="user-badge">
-          <span class="user-avatar">
-            <img v-if="auth.user.avatar_url" :src="auth.user.avatar_url" :alt="auth.user.display_name || auth.user.username" @error="onAvatarError" />
-            <span :style="auth.user.avatar_url ? 'display: none' : ''">{{ (auth.user.display_name || auth.user.username).charAt(0).toUpperCase() }}</span>
-          </span>
-          {{ auth.user.display_name || auth.user.username }} · 学生
+        <div class="sidebar-user" ref="userMenuRef">
+          <button class="user-badge clickable" type="button" @click="userMenuOpen = !userMenuOpen">
+            <span class="user-avatar">
+              <img v-if="auth.user.avatar_url" :src="auth.user.avatar_url" :alt="auth.user.display_name || auth.user.username" @error="onAvatarError" />
+              <span :style="auth.user.avatar_url ? 'display: none' : ''">{{ (auth.user.display_name || auth.user.username).charAt(0).toUpperCase() }}</span>
+            </span>
+            {{ auth.user.display_name || auth.user.username }} · 学生
+            <svg style="margin-left:auto;opacity:.6" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+          </button>
+          <Transition name="modal-fade">
+            <div v-if="userMenuOpen" class="user-menu">
+              <RouterLink class="user-menu-item" :to="{ name: 'student-profile' }">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                个人中心
+              </RouterLink>
+              <button class="user-menu-item" type="button" @click="toggleThemeFromMenu">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                切换到{{ theme === 'dark' ? '浅色' : '深色' }}模式
+              </button>
+              <button class="user-menu-item danger" type="button" @click="handleLogout">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                退出登录
+              </button>
+            </div>
+          </Transition>
         </div>
-        <button class="btn danger sm" style="margin-top: 8px; width: 100%" @click="handleLogout">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-          退出登录
-        </button>
       </div>
     </aside>
 
@@ -91,21 +106,15 @@
             </span>
             {{ auth.user?.display_name || auth.user?.username }}
           </RouterLink>
-          <button class="theme-toggle" @click="toggle" type="button">
-            <span class="theme-toggle-icon">
-              <svg v-if="theme === 'dark'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-              <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-            </span>
-            {{ theme === 'dark' ? '浅色' : '深色' }}
-            <span class="theme-toggle-track"></span>
-          </button>
-          <button class="btn secondary sm" @click="refreshPage">
+          <button class="btn secondary sm icon-btn" type="button" title="刷新页面" @click="refreshPage">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-            刷新
+            <span class="icon-btn-text">刷新</span>
           </button>
-          <button class="btn danger sm" @click="handleLogout">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-            退出
+          <button class="btn ghost sm mobile-only" type="button" title="切换主题" @click="toggle">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </button>
+          <button class="btn ghost sm mobile-only" type="button" title="退出登录" @click="handleLogout">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           </button>
         </div>
       </header>
@@ -116,7 +125,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useTheme } from '@/composables/useTheme'
@@ -130,6 +139,27 @@ const router = useRouter()
 const { theme, toggle } = useTheme()
 const { latestNotification } = useWebSocket()
 const notificationBellRef = ref<InstanceType<typeof NotificationBell> | null>(null)
+
+const userMenuOpen = ref(false)
+const userMenuRef = ref<HTMLElement | null>(null)
+
+function toggleThemeFromMenu() {
+  toggle()
+  userMenuOpen.value = false
+}
+
+function handleClickOutside(event: MouseEvent) {
+  if (userMenuRef.value && !userMenuRef.value.contains(event.target as Node)) {
+    userMenuOpen.value = false
+  }
+}
+
+watch(() => route.fullPath, () => {
+  userMenuOpen.value = false
+})
+
+onMounted(() => document.addEventListener('click', handleClickOutside))
+onBeforeUnmount(() => document.removeEventListener('click', handleClickOutside))
 
 // WebSocket 收到 notification 事件时刷新铃铛未读数
 watch(latestNotification, () => {
@@ -148,14 +178,14 @@ const titleMap: Record<string, string> = {
 }
 
 const subtitleMap: Record<string, string> = {
-  'student-dashboard': '查看小组设备状态和最新环境数据',
-  'student-tasks': '完成老师布置的观察和实验任务',
-  'student-sensor': '查看本组设备采集的环境数据',
-  'student-submissions': '查看已提交的作业和老师的批阅反馈',
-  'student-resources': '查看老师发布的课件、视频和文档资料',
-  'student-experiments': '查看本组的科学实验项目，记录观察数据',
-  'student-pest-diagnoses': '查看本组 ESP32-CAM 上传的植物诊断结果',
-  'student-profile': '管理你的个人信息、头像和密码',
+  'student-dashboard': '看看你的植物今天怎么样了',
+  'student-tasks': '完成老师布置的观察与实验任务',
+  'student-sensor': '本组设备采集的环境数据',
+  'student-submissions': '已提交的作业与老师的批阅反馈',
+  'student-resources': '老师分享的课件、视频和文档',
+  'student-experiments': '记录你的观察，完成科学实验',
+  'student-pest-diagnoses': '看看植物有没有生病',
+  'student-profile': '管理昵称、头像和密码',
 }
 
 const title = computed(() => titleMap[String(route.name)] ?? '智慧大棚学生端')

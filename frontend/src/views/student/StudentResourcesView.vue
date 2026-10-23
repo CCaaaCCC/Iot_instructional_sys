@@ -1,6 +1,8 @@
 <template>
   <div class="content-area">
-    <div v-if="loading" class="loading-state">加载中...</div>
+    <div v-if="loading" class="content-area">
+      <div v-for="i in 3" :key="i" class="skeleton card"></div>
+    </div>
     <div v-else-if="error" class="msg-error">{{ error }}</div>
     <template v-else>
       <template v-if="groupedResources.length">
@@ -52,9 +54,12 @@
           </div>
         </article>
       </template>
-      <div v-else class="empty-state">
-        暂无学习资源
-      </div>
+      <EmptyState
+        v-else
+        icon="inbox"
+        title="暂无学习资源"
+        desc="老师发布课件或资料后，会出现在这里"
+      />
     </template>
 
     <FilePreviewModal v-if="previewItem" :file="previewItem" @close="previewItem = null" />
@@ -65,6 +70,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { fetchMyResources } from '@/api/resources'
 import FilePreviewModal from '@/components/FilePreviewModal.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import type { TeachingResource } from '@/types'
 
 const resources = ref<TeachingResource[]>([])

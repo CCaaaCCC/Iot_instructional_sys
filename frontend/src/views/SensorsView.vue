@@ -51,9 +51,12 @@
             </tbody>
           </table>
         </div>
-        <div v-else class="empty-state">
-          暂无数据
-        </div>
+        <EmptyState
+          v-else
+          icon="chart"
+          title="暂无环境数据"
+          desc="设备上报后，最新一条数据会实时显示在这里"
+        />
       </SectionCard>
     </div>
 
@@ -91,9 +94,12 @@
           </tr>
         </tbody>
       </table>
-      <div v-if="!history.length" class="empty-state">
-        暂无历史记录
-      </div>
+      <EmptyState
+        v-if="!history.length"
+        icon="inbox"
+        title="暂无历史记录"
+        desc="调整节点或条数后重试，或等待设备继续上报"
+      />
     </SectionCard>
   </div>
 </template>
@@ -102,29 +108,19 @@
 import { onMounted, reactive, ref, watch } from 'vue'
 import SectionCard from '@/components/SectionCard.vue'
 import LineChart from '@/components/LineChart.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import { fetchLatestSensorData, fetchSensorCharts, fetchSensorData } from '@/api/sensors'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { sensorMetricLabels } from '@/utils/labels'
 import type { EChartsResponse, SensorData, SensorMetric } from '@/types'
 
 const { connected, latestSensorData } = useWebSocket()
 
-const metricLabelMap: Record<string, string> = {
-  air_temp: '空气温度',
-  air_humidity: '空气湿度',
-  soil_humidity: '土壤湿度',
-  light_intensity: '光照强度',
-  soil_ph: '土壤pH',
-  co2: 'CO₂浓度',
-}
+const metricLabelMap: Record<string, string> = sensorMetricLabels
 
-const allMetrics: { value: SensorMetric; label: string }[] = [
-  { value: 'air_temp', label: '空气温度' },
-  { value: 'air_humidity', label: '空气湿度' },
-  { value: 'soil_humidity', label: '土壤湿度' },
-  { value: 'light_intensity', label: '光照强度' },
-  { value: 'soil_ph', label: '土壤pH' },
-  { value: 'co2', label: 'CO₂浓度' },
-]
+const allMetrics: { value: SensorMetric; label: string }[] = (
+  Object.keys(sensorMetricLabels) as SensorMetric[]
+).map((value) => ({ value, label: sensorMetricLabels[value] }))
 
 const selectedMetrics = ref<SensorMetric[]>(allMetrics.map((m) => m.value))
 
