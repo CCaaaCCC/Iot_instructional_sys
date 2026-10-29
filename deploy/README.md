@@ -6,7 +6,7 @@
 
 | 项 | 值 |
 |----|----|
-| 访问地址 | **http://47.80.57.231:8080** |
+| 访问地址 | **http://xxxxxxxxxx** |
 | 服务器 | 阿里云 ECS，Ubuntu 24.04.5 LTS，2 核 / 1.6 GiB / 8 GiB swap |
 | Nginx 端口 | `8080`（80 被 Docker 项目 `gravity_tunnel` 占用，未改动） |
 | 部署参数 | `HTTP_PORT=8080 ENABLE_UFW=0 ENABLE_MCP=0 INIT_SAMPLE_DATA=false` |
