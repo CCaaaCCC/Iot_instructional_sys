@@ -19,7 +19,7 @@ cd frontend && npm install && npm run dev                # Start Vite dev server
 cd frontend && npm run build                             # Production build (vue-tsc + vite)
 
 # Testing
-pytest tests/ -v                                         # All tests (365 items)
+pytest tests/ -v                                         # All tests (362 items)
 pytest tests/test_unit.py -v                             # Schema/enum unit tests
 pytest tests/test_api.py -v                              # API integration tests
 pytest tests/test_e2e.py -v                              # E2E flow tests
@@ -40,10 +40,10 @@ python mcp_bridge.py                                         # MCP bridge to xia
 
 | Device | Role | Communication | Auth |
 |--------|------|--------------|------|
-| **ESP32** | Main node: sensors + actuators (fan/pump/light) | MQTT (`greenhouse/sensor/data`, `greenhouse/device/control`) | Device token via `get_device_context` for HTTP, MQTT publishes as device |
+| **ESP32** | Main node: sensors + actuators (fan/pump/light) | MQTT (`greenhouse/sensor/data`, `greenhouse/device/control`) | Device token via `get_device_context` for HTTP; MQTT username/password auth |
 | **ESP32-CAM** | Camera: plant pest diagnosis image upload | HTTP POST `/api/v1/pest-diagnoses/upload` | Device token (only `esp32cam` type allowed) |
 | **ESP32-S3 (小智 AI)** | Voice AI assistant: queries sensor data, controls actuators, checks tasks/crops | HTTP via MCP protocol: `GET /mcp/tools`, `POST /mcp/tools/call` | Device token (6 read+control tools, all auto-scoped to `group_id`) |
-| **ESP32-S3 Monitor** | TFT dashboard upper computer: reports sensor data + receives actuator control commands via UART to lower computer | MQTT (`greenhouse/sensor/data`, `greenhouse/device/control`, `greenhouse/device/status`) | MQTT publishes as device (no token auth on broker); device token for HTTP if needed |
+| **ESP32-S3 Monitor** | TFT dashboard upper computer: reports sensor data + receives actuator control commands via UART to lower computer | MQTT (`greenhouse/sensor/data`, `greenhouse/device/control`, `greenhouse/device/status`) | MQTT username/password auth (credentials in `wifi_config.h`); device token for HTTP if needed |
 
 Each group has device tokens (one per device type), all bound to the same `group_id`. Tokens are created/reset/revoked via `/device-tokens` endpoints.
 
@@ -61,6 +61,17 @@ Firmware/edge code for the four device types lives in separate projects, NOT in 
 | `D:\Project\my_model\` | Pest-classification model training/inference (PyTorch); artifact copied to `models/pest_model.pth` here | backend AI |
 
 The 小智 AI (`esp32s3`) firmware is a third-party xiaozhi.me build; only the backend MCP endpoints live in this repo.
+
+### Production Deployment (Aliyun Ubuntu 24.04, 2C2G)
+
+- Guide: `deploy/README.md`; actual deployment record: `deploy/DEPLOYMENT_RECORD.md`.
+- Current instance: `http://47.80.57.231:8080`. Nginx uses `HTTP_PORT=8080` because host port 80 is occupied by an unrelated Docker project (`gravity_tunnel`) that must not be touched.
+- Host stack: MySQL 8 (`127.0.0.1:3306`), Mosquitto (`0.0.0.0:1883`, username/password auth), uvicorn (`127.0.0.1:8001`, 1 worker), Nginx reverse proxy.
+- Deploy: `sudo SERVER_IP=... HTTP_PORT=8080 ENABLE_UFW=0 ENABLE_MCP=0 INIT_SAMPLE_DATA=false bash deploy/install.sh`.
+- Packaging: exclude `*.pth`, **not** `models`, otherwise `app/models` is dropped (causes `ModuleNotFoundError: No module named 'app.models'`).
+- MQTT credentials live in `/opt/greenhouse/.env` and `/etc/mosquitto/passwd`; the upper-computer firmware must match via `tft_screen_1.9/src/wifi_config.h`. Never commit secrets to docs.
+- UFW is disabled on this instance (Docker publishes port 80); the Alibaba Cloud security group enforces 22/8080/1883.
+- PyTorch is not installed on the 2C2G server, so pest-diagnosis uploads return "PyTorch not installed".
 
 ### Layered Backend (3-tier)
 
@@ -136,6 +147,8 @@ Uses `pydantic-settings` with `.env` file auto-load. All settings accessed via `
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | 1440 (24h) | JWT lifetime |
 | `CORS_ORIGINS` | `*` | CORS allowed origins |
 | `MQTT_BROKER_HOST` | `localhost` | Mosquitto address |
+| `MQTT_USERNAME` | (empty) | MQTT username; empty = anonymous (local dev) |
+| `MQTT_PASSWORD` | (empty) | MQTT password; must match Mosquitto `password_file` |
 | `INIT_ADMIN_USERNAME` | `admin` | Seed admin user |
 | `INIT_ADMIN_PASSWORD` | `Admin123456` | Seed admin password |
 | `INIT_SAMPLE_DATA` | `true` | Seed classrooms/groups/devices |
@@ -167,6 +180,7 @@ No Alembic. Schema changes are applied by `Base.metadata.create_all()` in `app/s
 ### MQTT Integration + WebSocket: `app/core/mqtt_client.py` + `app/core/websocket_manager.py`
 
 - **MQTT** managed via FastAPI lifespan: `start_mqtt()` at startup, `stop_mqtt()` at shutdown. Auto-reconnect with exponential backoff (1s→120s).
+- **Broker auth**: `MQTT_USERNAME` / `MQTT_PASSWORD` settings. Empty username = anonymous (local dev only). Production Mosquitto uses `password_file /etc/mosquitto/passwd` + `allow_anonymous false`; the same credentials must be flashed into `tft_screen_1.9/src/wifi_config.h`.
 - Subscribes to `greenhouse/sensor/data` and `greenhouse/device/status`. Publishes control commands to `greenhouse/device/control`.
 - **Control payload** (`publish_component_control`) includes `component_type` field (fan/pump/light) so MQTT devices (e.g. `esp32s3_monitor`) can map directly to actuators without reverse-looking-up the DB. The field is backward-compatible (omitted when empty).
 - Health check at `GET /health` returns `{"status": "ok", "mqtt": "connected|disconnected"}`.

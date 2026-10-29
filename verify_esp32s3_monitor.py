@@ -18,9 +18,11 @@ from datetime import datetime
 
 import paho.mqtt.client as mqtt
 
+from app.core.config import settings
+
 NODE_ID = 4  # 与 setup_esp32s3_monitor.py 创建的 device_node id 一致
-MQTT_HOST = "localhost"
-MQTT_PORT = 1883
+MQTT_HOST = settings.MQTT_BROKER_HOST
+MQTT_PORT = settings.MQTT_BROKER_PORT
 
 TOPIC_SENSOR_DATA = "greenhouse/sensor/data"
 TOPIC_DEVICE_STATUS = "greenhouse/device/status"
@@ -131,6 +133,11 @@ def main():
     client.on_connect = on_connect
     client.on_message = on_message
     client.on_disconnect = on_disconnect
+
+    if settings.MQTT_USERNAME:
+        client.username_pw_set(
+            settings.MQTT_USERNAME, settings.MQTT_PASSWORD or None
+        )
 
     # LWT：掉线时自动发布 offline
     lwt = json.dumps({"node_id": NODE_ID, "online": False})

@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     MQTT_BROKER_HOST: str = "localhost"
     MQTT_BROKER_PORT: int = 1883
     MQTT_CLIENT_ID: str = "greenhouse-backend"
+    MQTT_USERNAME: str = ""  # 空=匿名连接（仅本地开发）
+    MQTT_PASSWORD: str = ""
     MQTT_TOPIC_SENSOR_DATA: str = "greenhouse/sensor/data"
     MQTT_TOPIC_DEVICE_STATUS: str = "greenhouse/device/status"
     MQTT_TOPIC_DEVICE_CONTROL: str = "greenhouse/device/control"

@@ -213,6 +213,12 @@ class ESP32Simulator:
         self.client.on_message = self._on_message
         self.client.on_disconnect = self._on_disconnect
 
+        if settings.MQTT_USERNAME:
+            self.client.username_pw_set(
+                settings.MQTT_USERNAME, settings.MQTT_PASSWORD or None
+            )
+            logger.info("MQTT 认证用户: %s", settings.MQTT_USERNAME)
+
     # ── 组件加载 ──
 
     def load_components(self) -> bool:

@@ -207,6 +207,12 @@ def start_mqtt() -> None:
     _mqtt_client.on_disconnect = _on_disconnect
     _mqtt_client.on_message = _on_message
 
+    if settings.MQTT_USERNAME:
+        _mqtt_client.username_pw_set(
+            settings.MQTT_USERNAME, settings.MQTT_PASSWORD or None
+        )
+        logger.info("MQTT auth enabled, username=%s", settings.MQTT_USERNAME)
+
     # 指数退避自动重连：1s → 2s → 4s → ... → 120s
     _mqtt_client.reconnect_delay_set(min_delay=1, max_delay=120)
 

@@ -2,6 +2,8 @@
 
 本文件是智慧大棚教学平台 `d:\IoT` 配套硬件代码的索引。硬件代码**不在** `d:\IoT` 仓库内，分布在以下 4 个有效关联项目中。设备通过 MQTT / HTTP / UART 与后端或上位机通信。
 
+**当前云端实例**：`47.80.57.231` — 网页 `http://47.80.57.231:8080`，MQTT `47.80.57.231:1883`（用户名/密码认证）。部署详情见 [deploy/DEPLOYMENT_RECORD.md](deploy/DEPLOYMENT_RECORD.md)。
+
 ## 一、代码位置总览
 
 | 路径 | 项目 | 设备类型 |
@@ -50,7 +52,7 @@
   - ST7789 1.9" TFT（170×320 竖屏）—「科学观测仪」主屏，6 项指标（空气温度/湿度、光照、土壤湿度、CO₂、pH），2s 局部无闪烁刷新，Font4 26px 大字体
   - 128×64 OLED（I2C）— 室外天气对照副屏（NTP 时间 + 和风天气 API）
 - **外设**：IR 红外遥控（NEC，GPIO15）→ UART 控制下位机执行器；UART 双向通信（TX=1 / RX=6，115200）
-- **MQTT 云端**：PubSubClient；上报 `greenhouse/sensor/data`（每 5s）+ 心跳 `greenhouse/device/status`（每 30s + LWT 告警）；订阅 `greenhouse/device/control` 接收控制命令（按 `component_type` 映射到 UART 命令 P/L/F）
+- **MQTT 云端**：PubSubClient，用户名/密码认证；当前配置指向 `47.80.57.231:1883`（见 `wifi_config.h` 的 `MQTT_BROKER_HOST` / `MQTT_USERNAME` / `MQTT_PASSWORD`）；上报 `greenhouse/sensor/data`（每 5s）+ 心跳 `greenhouse/device/status`（每 30s + LWT 告警）；订阅 `greenhouse/device/control` 接收控制命令（按 `component_type` 映射到 UART 命令 P/L/F）
 - **数据源切换**：优先使用下位机 UART 真实数据，超过 15s 无数据自动回退模拟数据
 - **源码模块**（`src/`）：`main.cpp`、`tft_dashboard.*`、`weather.*`、`oled_display.*`、`ir_control.*`、`uart_uplink.*`、`uart_downlink.*`、`cloud_comm.*`、`chinese_labels.h`（自动生成）、`wifi_config.h`（含凭据，已 gitignore）
 - **中文标签生成**：`python generate_labels.py` → 生成 `chinese_labels.h` RGB565 位图
@@ -63,8 +65,9 @@
 - **框架**：PlatformIO + Arduino（`board = esp32cam`）
 - **入口**：`src/main.cpp`
 - **核心功能**：复位/上电后自动拍照（640×480 JPEG，quality=12）→ 闪光灯预亮 → 流式 multipart 上传 → HTTP POST 到后端 `/api/v1/pest-diagnoses/upload`（Bearer 设备令牌鉴权）→ 串口打印诊断结果。上传失败重试 3 次（间隔 3s）。
+- **云端地址**：`main.cpp` 中 `serverHost = "47.80.57.231"`、`serverPort = 8080`（经 Nginx 8080 转发到后端 8001）
 - **关键依赖**：`esp_camera`、`WiFi`、`HTTPClient`、`ArduinoJson`
-- **配置位置**：`main.cpp` 顶部（ssid / 后端 IP / `deviceToken`）
+- **配置位置**：`main.cpp` 顶部（WiFi、`serverHost` / `serverPort`、`deviceToken`）；当前云端为 `47.80.57.231:8080`
 - **编译烧录**：`pio run --target upload`；串口 `pio device monitor -b 115200`
 
 ### 4. 病虫害图像分类模型（训练 / 推理）
@@ -87,8 +90,8 @@
 | 项目 | 通信方式 | 对接点 |
 |------|---------|--------|
 | greenhouse_lower_node | UART → 上位机 | 经 `tft_screen_1.9` 转发，不直接连后端 |
-| tft_screen_1.9（esp32s3_monitor） | MQTT | `greenhouse/sensor/data`、`greenhouse/device/control`、`greenhouse/device/status` |
-| esp32cam-upload | HTTP POST | `/api/v1/pest-diagnoses/upload`，Bearer 设备令牌（esp32cam 类型） |
+| tft_screen_1.9（esp32s3_monitor） | MQTT | `47.80.57.231:1883`（用户名/密码认证）；主题 `greenhouse/sensor/data`、`greenhouse/device/control`、`greenhouse/device/status` |
+| esp32cam-upload | HTTP POST | `http://47.80.57.231:8080/api/v1/pest-diagnoses/upload`，Bearer 设备令牌（esp32cam 类型） |
 | my_model | 离线训练/推理 | 训练产物 `best_model.pth` 对应后端默认加载的 `d:\IoT\models\pest_model.pth` |
 
-> 通用约定（详见 `d:\IoT` 根目录 AGENTS.md / CLAUDE.md）：设备令牌由「设备令牌管理」创建（每小组每种设备一个，绑 `group_id`）；上位机需在 `wifi_config.h` 中配置 `NODE_ID`。
+> 通用约定（详见 `d:\IoT` 根目录 AGENTS.md）：设备令牌由「设备令牌管理」创建（每小组每种设备一个，绑 `group_id`）；上位机需在 `wifi_config.h` 中配置 `NODE_ID`。MQTT 密码不写入本文件，见服务器 `/opt/greenhouse/.env`。

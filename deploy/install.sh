@@ -23,16 +23,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="${APP_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 APP_USER="${APP_USER:-greenhouse}"
 WEB_ROOT="${WEB_ROOT:-/var/www/greenhouse}"
+HTTP_PORT="${HTTP_PORT:-80}"
+ENABLE_UFW="${ENABLE_UFW:-1}"
 SERVER_IP="${SERVER_IP:-}"
 MQTT_ALLOWED_IP="${MQTT_ALLOWED_IP:-}"
 DB_NAME="${DB_NAME:-greenhouse}"
 DB_USER="${DB_USER:-greenhouse}"
+MQTT_USERNAME="${MQTT_USERNAME:-greenhouse}"
+MQTT_PASSWORD="${MQTT_PASSWORD:-}"
 INIT_SAMPLE_DATA="${INIT_SAMPLE_DATA:-false}"
 ENABLE_MCP="${ENABLE_MCP:-auto}"
 ENV_FILE="$PROJECT_DIR/.env"
 
 GENERATED_DB_PASSWORD=0
 GENERATED_ADMIN_PASSWORD=0
+GENERATED_MQTT_PASSWORD=0
 
 log()  { echo -e "\033[36m[deploy]\033[0m $*"; }
 warn() { echo -e "\033[33m[deploy][warn]\033[0m $*"; }
@@ -50,8 +55,13 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq \
     python3-venv python3-pip \
-    nginx mysql-server mosquitto mosquitto-clients \
+    mysql-server mosquitto mosquitto-clients \
     openssl curl ca-certificates ufw tar
+
+# Nginx 单独安装：默认站点会尝试监听 80，若 80 已被 Docker 占用，
+# 安装后的自动启动会失败，但包本身可用，随后我们会移除默认站点。
+apt-get install -y -qq nginx || true
+dpkg -s nginx >/dev/null 2>&1 || die "Nginx 安装失败"
 
 # ============================================================
 # 2. 2G 内存必备 swap
@@ -152,6 +162,17 @@ if [[ -z "${ADMIN_PASSWORD:-}" ]]; then
     fi
 fi
 
+# MQTT 密码：优先环境变量，其次沿用 .env，最后随机生成
+if [[ -z "$MQTT_PASSWORD" ]]; then
+    CURRENT_MQTT_PASSWORD="$(grep -E '^MQTT_PASSWORD=' "$ENV_FILE" | head -n1 | cut -d= -f2- || true)"
+    if [[ -z "$CURRENT_MQTT_PASSWORD" || "$CURRENT_MQTT_PASSWORD" == "CHANGE_ME" ]]; then
+        MQTT_PASSWORD="$(openssl rand -hex 16)"
+        GENERATED_MQTT_PASSWORD=1
+    else
+        MQTT_PASSWORD="$CURRENT_MQTT_PASSWORD"
+    fi
+fi
+
 set_env() {
     local key="$1" value="$2"
     KEY="$key" VALUE="$value" FILE="$ENV_FILE" python3 - <<'PY'
@@ -186,9 +207,16 @@ set_env JWT_SECRET_KEY "$JWT_SECRET"
 set_env INIT_ADMIN_USERNAME "admin"
 set_env INIT_ADMIN_PASSWORD "$ADMIN_PASSWORD"
 set_env INIT_SAMPLE_DATA "$INIT_SAMPLE_DATA"
-set_env CORS_ORIGINS "http://$SERVER_IP"
+if [[ "$HTTP_PORT" == "80" ]]; then
+    CORS_ORIGIN="http://$SERVER_IP"
+else
+    CORS_ORIGIN="http://$SERVER_IP:$HTTP_PORT"
+fi
+set_env CORS_ORIGINS "$CORS_ORIGIN"
 set_env MQTT_BROKER_HOST "127.0.0.1"
 set_env MQTT_BROKER_PORT "1883"
+set_env MQTT_USERNAME "$MQTT_USERNAME"
+set_env MQTT_PASSWORD "$MQTT_PASSWORD"
 set_env AUTO_CREATE_DB "true"
 
 chown "$APP_USER:$APP_USER" "$ENV_FILE"
@@ -228,7 +256,7 @@ sed -i "s|__APP_DIR__|$PROJECT_DIR|g; s|__APP_USER__|$APP_USER|g" /etc/systemd/s
 # ============================================================
 log "配置 Nginx..."
 install -m 644 "$SCRIPT_DIR/nginx/greenhouse.conf" /etc/nginx/sites-available/greenhouse
-sed -i "s|__WEB_ROOT__|$WEB_ROOT|g" /etc/nginx/sites-available/greenhouse
+sed -i "s|__WEB_ROOT__|$WEB_ROOT|g; s|__HTTP_PORT__|$HTTP_PORT|g" /etc/nginx/sites-available/greenhouse
 ln -sfn /etc/nginx/sites-available/greenhouse /etc/nginx/sites-enabled/greenhouse
 rm -f /etc/nginx/sites-enabled/default
 
@@ -244,12 +272,21 @@ fi
 
 nginx -t
 systemctl enable nginx >/dev/null 2>&1 || true
-systemctl reload nginx
+systemctl restart nginx || die "Nginx 启动失败，请检查端口 $HTTP_PORT 是否被占用"
+systemctl is-active --quiet nginx || die "Nginx 未运行，请执行 journalctl -u nginx -n 50"
 
 # ============================================================
 # 11. Mosquitto
 # ============================================================
 log "配置 Mosquitto..."
+command -v mosquitto_passwd >/dev/null 2>&1 || die "未找到 mosquitto_passwd，请确认 mosquitto 已安装"
+if [[ -f /etc/mosquitto/passwd ]]; then
+    mosquitto_passwd -b /etc/mosquitto/passwd "$MQTT_USERNAME" "$MQTT_PASSWORD"
+else
+    mosquitto_passwd -c -b /etc/mosquitto/passwd "$MQTT_USERNAME" "$MQTT_PASSWORD"
+fi
+chown mosquitto:mosquitto /etc/mosquitto/passwd
+chmod 600 /etc/mosquitto/passwd
 # 避免主配置里已有 listener 1883 导致端口冲突
 if grep -qE '^[[:space:]]*listener[[:space:]]+1883' /etc/mosquitto/mosquitto.conf 2>/dev/null; then
     sed -i -E 's|^([[:space:]]*listener[[:space:]]+1883.*)$|# \1|' /etc/mosquitto/mosquitto.conf
@@ -261,15 +298,19 @@ systemctl restart mosquitto || warn "Mosquitto 启动失败，请检查 /etc/mos
 # ============================================================
 # 12. 防火墙
 # ============================================================
-log "配置 ufw..."
-ufw allow OpenSSH >/dev/null 2>&1 || true
-ufw allow 80/tcp >/dev/null 2>&1 || true
-if [[ -n "$MQTT_ALLOWED_IP" ]]; then
-    ufw allow from "$MQTT_ALLOWED_IP" to any port 1883 proto tcp >/dev/null 2>&1 || true
+if [[ "$ENABLE_UFW" == "1" ]]; then
+    log "配置 ufw..."
+    ufw allow OpenSSH >/dev/null 2>&1 || true
+    ufw allow "$HTTP_PORT/tcp" >/dev/null 2>&1 || true
+    if [[ -n "$MQTT_ALLOWED_IP" ]]; then
+        ufw allow from "$MQTT_ALLOWED_IP" to any port 1883 proto tcp >/dev/null 2>&1 || true
+    else
+        warn "未设置 MQTT_ALLOWED_IP，1883 未放行；请优先在阿里云安全组按来源 IP 放行"
+    fi
+    ufw --force enable >/dev/null 2>&1 || warn "ufw 启用失败，请手动检查"
 else
-    warn "未设置 MQTT_ALLOWED_IP，1883 未放行；请优先在阿里云安全组按来源 IP 放行"
+    log "已跳过 ufw（ENABLE_UFW=0），请用阿里云安全组放行端口"
 fi
-ufw --force enable >/dev/null 2>&1 || warn "ufw 启用失败，请手动检查"
 
 # ============================================================
 # 13. 启动服务
@@ -308,7 +349,12 @@ if [[ "$HEALTH_OK" -eq 1 ]]; then
 else
     echo " 后端健康检查: 失败，请执行 journalctl -u greenhouse-api -n 100"
 fi
-echo " 访问地址:     http://$SERVER_IP"
+if [[ "$HTTP_PORT" == "80" ]]; then
+    ACCESS_URL="http://$SERVER_IP"
+else
+    ACCESS_URL="http://$SERVER_IP:$HTTP_PORT"
+fi
+echo " 访问地址:     $ACCESS_URL"
 echo " 管理员账号:   admin"
 if [[ "$GENERATED_ADMIN_PASSWORD" -eq 1 ]]; then
     echo " 管理员密码:   $ADMIN_PASSWORD   （随机生成，请立即保存）"
@@ -318,6 +364,9 @@ fi
 if [[ "$GENERATED_DB_PASSWORD" -eq 1 ]]; then
     echo " 数据库密码:   $DB_PASSWORD     （已写入 .env，请妥善保存）"
 fi
+echo " MQTT 账号:    $MQTT_USERNAME"
+echo " MQTT 密码:    $MQTT_PASSWORD"
+echo "               ↑ 请填入上位机 wifi_config.h 的 MQTT_USERNAME / MQTT_PASSWORD 并重新烧录"
 echo
 echo " 常用命令:"
 echo "   systemctl status greenhouse-api"

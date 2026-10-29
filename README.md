@@ -42,6 +42,21 @@
 
 小智 AI（ESP32-S3）固件为小智官方第三方固件，本仓库仅包含其后端 MCP 接口。
 
+## 云端部署实例
+
+当前生产实例已部署到阿里云：
+
+| 项 | 值 |
+|----|----|
+| 访问地址 | **http://47.80.57.231:8080** |
+| 服务器 | 阿里云 ECS，Ubuntu 24.04，2 核 / 2G |
+| MQTT | `47.80.57.231:1883`，用户名/密码认证 |
+| 部署指南 | [deploy/README.md](deploy/README.md) |
+| 部署记录 | [deploy/DEPLOYMENT_RECORD.md](deploy/DEPLOYMENT_RECORD.md) |
+
+> 同机 80 端口由 `gravity_tunnel` 项目占用，本平台使用 8080，未改动现有服务。
+> MQTT 密码不写入文档，存放于服务器 `/opt/greenhouse/.env` 与 `/etc/mosquitto/passwd`；烧录固件时请从服务器获取。
+
 ## 技术栈
 
 | 层级 | 技术 | 说明 |
